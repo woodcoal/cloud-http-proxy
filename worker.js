@@ -62,7 +62,10 @@ const CONFIG = {
 	},
 
 	// 是否禁用响应缓存
-	disableCache: true
+	disableCache: true,
+
+	// 是否启用 HTML 相对路径替换（将 HTML 中的 /xxx 转换为绝对路径）
+	enableHtmlPathRewrite: true
 };
 // ==================== 配置区域结束 ====================
 
@@ -151,15 +154,24 @@ async function handleRequest(request) {
 			return handleRedirect(response, actualUrlStr);
 		}
 
-		// 处理 HTML 内容中的相对路径
+		// 处理 HTML 内容中的相对路径（需要先读取 body）
 		let body = response.body;
-		if (response.headers.get('Content-Type')?.includes('text/html')) {
-			body = await handleHtmlContent(response, url.protocol, url.host, actualUrlStr);
+		if (
+			CONFIG.enableHtmlPathRewrite &&
+			response.headers.get('Content-Type')?.includes('text/html')
+		) {
+			// 创建一个新的 Response 来保存 body，防止被消耗后无法再次读取
+			const text = await new Response(body).text();
+			const processedText = handleHtmlContent(text, url.protocol, url.host, actualUrlStr);
+			body = new Response(processedText, {
+				status: response.status,
+				headers: response.headers
+			}).body;
 		}
 
 		// 替换响应体内容
 		if (hasReplaceRule('response')) {
-			body = await replaceResponseBody(response);
+			body = await replaceResponseBody(body, response);
 		}
 
 		// 创建修改后的响应对象
@@ -428,20 +440,24 @@ function handleRedirect(response, actualUrlStr) {
 
 /**
  * 处理 HTML 内容中的相对路径
- * @param {Response} response - 原始响应对象
+ * @param {string} text - HTML 文本
  * @param {string} protocol - 当前代理的协议（如 "https:"）
  * @param {string} host - 当前代理的主机名
  * @param {string} actualUrlStr - 实际的目标 URL 字符串
- * @returns {Promise<string>} 处理后的 HTML 文本
+ * @returns {string} 处理后的 HTML 文本
  */
-async function handleHtmlContent(response, protocol, host, actualUrlStr) {
-	const originalText = await response.text();
+function handleHtmlContent(text, protocol, host, actualUrlStr) {
 	const origin = new URL(actualUrlStr).origin;
-	return replaceRelativePaths(originalText, protocol, host, origin);
+	// 移除 protocol 中的冒号，得到纯协议名如 https
+	const protocolName = protocol.replace(':', '');
+	// 替换 href="/xxx", src="/xxx", action="/xxx" 中的 /
+	// 替换为代理服务器的绝对路径 https://host/targetOrigin/xxx
+	const regex = /((href|src|action)=["\'])(?!\/)([^"']+)/g;
+	return text.replace(regex, `$1${protocolName}//${host}/${origin}/$3`);
 }
 
 /**
- * 替换 HTML 内容中的相对路径
+ * 替换 HTML 内容中的相对路径（旧版本，保留兼容性）
  * @param {string} text - 原始 HTML 文本
  * @param {string} protocol - 当前代理的协议
  * @param {string} host - 当前代理的主机名
@@ -449,8 +465,9 @@ async function handleHtmlContent(response, protocol, host, actualUrlStr) {
  * @returns {string} 替换后的 HTML 文本
  */
 function replaceRelativePaths(text, protocol, host, origin) {
-	const regex = /((href|src|action)=["\'])\/(?!\/)/g;
-	return text.replace(regex, `$1${protocol}//${host}/${origin}/`);
+	const protocolName = protocol.replace(':', '');
+	const regex = /((href|src|action)=["\'])(?!\/)([^"']+)/g;
+	return text.replace(regex, `$1${protocolName}//${host}/${origin}/$3`);
 }
 
 /**

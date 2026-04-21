@@ -99,6 +99,11 @@ const CONFIG = {
 		content: 'Proxy Service Running' // 返回的文本内容
 	},
 
+	// ==================== HTML 路径配置 ====================
+
+	// 是否启用 HTML 相对路径替换
+	enableHtmlPathRewrite: true,
+
 	// ==================== 缓存配置 ====================
 
 	// 是否禁用响应缓存
@@ -330,6 +335,18 @@ homePage: {
     content: ''
 }
 ```
+
+#### HTML 路径重写 (enableHtmlPathRewrite)
+
+```javascript
+enableHtmlPathRewrite: true; // 启用 HTML 相对路径替换（默认）
+enableHtmlPathRewrite: false; // 禁用，保留原始路径
+```
+
+当启用时，会将 HTML 中的相对路径转换为代理服务器的绝对路径：
+
+- `/css/style.css` → `https://proxy.com/https://example.com/css/style.css`
+- 适用于 `href`、`src`、`action` 属性
 
 #### 缓存配置 (disableCache)
 
