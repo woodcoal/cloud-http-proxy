@@ -88,9 +88,11 @@ const CONFIG = {
 	// 'script': script 标签的 src
 	// 'image': img 标签的 src
 	// 'media': video/audio 标签的 src
+	// 'iframe': iframe 标签的 src
 	// 'form': form 标签的 action
+	// 'all': 所有类型
 	// 设置为 false 禁用，或空数组 []
-	htmlPathRewriteScope: ['link', 'style', 'script', 'image', 'media', 'form'],
+	htmlPathRewriteScope: ['link', 'style', 'script', 'image', 'media', 'iframe', 'form'],
 
 	// ==================== 缓存配置 ====================
 
@@ -294,9 +296,10 @@ function isIpAllowed(request) {
 	}
 
 	// 获取客户端 IP（Cloudflare 会通过 cf-connecting-ip 提供）
-	const clientIp = request.headers.get('cf-connecting-ip') || 
-	                 request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
-	                 'unknown';
+	const clientIp =
+		request.headers.get('cf-connecting-ip') ||
+		request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+		'unknown';
 
 	for (const pattern of ipWhitelist) {
 		if (matchIpPattern(clientIp, pattern)) {
@@ -343,19 +346,19 @@ function matchIpPattern(clientIp, pattern) {
 function cidrMatch(ip, cidr) {
 	const [range, bits] = cidr.split('/');
 	const bitsNum = parseInt(bits);
-	
+
 	// 处理 /0 的情况（匹配所有 IP）
 	if (bitsNum === 0) {
 		return true;
 	}
-	
+
 	// 使用无符号右移避免溢出
 	const mask = ~((1 << (32 - bitsNum)) - 1) >>> 0;
 
 	const ipNum = ipToNumber(ip);
 	const rangeNum = ipToNumber(range);
 
-	return ((ipNum & mask) >>> 0) === ((rangeNum & mask) >>> 0);
+	return (ipNum & mask) >>> 0 === (rangeNum & mask) >>> 0;
 }
 
 /**
@@ -609,6 +612,7 @@ function handleHtmlContent(text, protocol, host, actualUrlStr) {
 		script: { tag: 'script', attr: 'src' },
 		image: { tag: 'img', attr: 'src' },
 		media: { tag: '(?:video|audio)', attr: 'src' },
+		iframe: { tag: 'iframe', attr: 'src' },
 		form: { tag: 'form', attr: 'action' }
 	};
 
@@ -616,51 +620,83 @@ function handleHtmlContent(text, protocol, host, actualUrlStr) {
 	const scope = CONFIG.htmlPathRewriteScope;
 
 	// 如果是 false 或空数组，直接返回
-	if (!scope || !Array.isArray(scope) || scope.length === 0) {
+	if (!scope) {
 		return text;
 	}
 
-	// 收集要处理的 scope（支持数组或单个值）
-	const scopes = Array.isArray(scope) ? scope : [scope];
+	// 统一的替换处理函数
+	const processUrl = (htmlText, attrName, tagPattern = null) => {
+		// 相对路径处理
+		const relativeRegex = tagPattern
+			? new RegExp(`<${tagPattern}[^>]*\\s+${attrName}=["\'](\\/[^"\']*)["']`, 'gi')
+			: new RegExp(`(\\s+)${attrName}=["\'](\\/[^"\']*)["']`, 'g');
 
-	// 处理每种 scope 类型
-	scopes.forEach((s) => {
-		const config = scopeConfig[s];
-		if (!config) return;
-
-		const { tag, attr } = config;
-		const attrPattern = attr;
-
-		// 处理相对路径（以 / 开头）
-		const relativeRegex = new RegExp(
-			`<${tag}[^>]*\\s+${attrPattern}=["\'](\\/[^"\']*)["']`,
-			'gi'
-		);
-		text = text.replace(relativeRegex, (match, path) => {
+		htmlText = htmlText.replace(relativeRegex, (match, spaceOrPrefix, path) => {
 			if (path.includes(host)) {
 				return match;
 			}
 			const encodedTarget = encodeURIComponent(targetOrigin);
-			return match.replace(path, `${protocolName}://${host}/${encodedTarget}${path}`);
+			const space = spaceOrPrefix || '';
+			return `${space}${attrName}="${protocolName}://${host}/${encodedTarget}${path}"`;
 		});
 
-		// 处理绝对路径（http://, https://, // 开头）
-		const absoluteRegex = new RegExp(
-			`<${tag}[^>]*\\s+${attrPattern}=["\']((?:https?:)?\\/\\/[^"\']*)["']`,
-			'gi'
-		);
-		text = text.replace(absoluteRegex, (match, url) => {
-			// 检查是否已经是代理地址
+		// 绝对路径处理
+		const absoluteRegex = tagPattern
+			? new RegExp(
+					`<${tagPattern}[^>]*\\s+${attrName}=["\']((?:https?:)?\\/\\/[^"\']*)["\']`,
+					'gi'
+				)
+			: new RegExp(`(\\s+)${attrName}=["\']((?:https?:)?\\/\\/[^"\']*)["\']`, 'g');
+
+		htmlText = htmlText.replace(absoluteRegex, (match, spaceOrPrefix, url) => {
 			if (url.startsWith(`https://${host}/`) || url.startsWith(`http://${host}/`)) {
 				return match;
 			}
-			// 确保 URL 有协议
 			let fullUrl = url;
 			if (!url.startsWith('http://') && !url.startsWith('https://')) {
 				fullUrl = 'https:' + url;
 			}
 			const encodedUrl = encodeURIComponent(fullUrl);
-			return match.replace(url, `${protocolName}://${host}/${encodedUrl}`);
+			const space = spaceOrPrefix || '';
+			return `${space}${attrName}="${protocolName}://${host}/${encodedUrl}"`;
+		});
+
+		return htmlText;
+	};
+
+	// 处理数组形式
+	let scopesToProcess = [];
+
+	// 处理 'all' 的情况 - 不限制标签，处理所有 src 和 href 属性
+	if (scope === 'all' || (Array.isArray(scope) && scope.includes('all'))) {
+		text = processUrl(text, 'href');
+		text = processUrl(text, 'src');
+		text = processUrl(text, 'action');
+		return text;
+	} else if (Array.isArray(scope) && scope.length > 0) {
+		scopesToProcess = scope;
+	} else {
+		return text;
+	}
+
+	// 收集需要处理的属性（去重）
+	const attrsToProcess = [
+		...new Set(scopesToProcess.map((s) => scopeConfig[s]?.attr).filter(Boolean))
+	];
+
+	// 处理每种属性
+	attrsToProcess.forEach((attr) => {
+		// 收集需要处理的标签
+		const tags = [
+			...new Set(
+				scopesToProcess
+					.filter((s) => scopeConfig[s]?.attr === attr)
+					.map((s) => scopeConfig[s].tag)
+			)
+		];
+
+		tags.forEach((tag) => {
+			text = processUrl(text, attr, tag);
 		});
 	});
 

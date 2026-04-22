@@ -117,7 +117,7 @@ const CONFIG = {
 	// ==================== HTML 路径配置 ====================
 
 	// HTML 路径替换范围（数组形式，可组合）
-	htmlPathRewriteScope: ['link', 'style', 'script', 'image', 'media', 'form'],
+	htmlPathRewriteScope: ['link', 'style', 'script', 'image', 'media', 'iframe', 'form'],
 
 	// ==================== 缓存配置 ====================
 
@@ -380,7 +380,10 @@ homePage: {
 
 ```javascript
 // 数组形式，可自由组合
-htmlPathRewriteScope: ['link', 'style', 'script', 'image', 'media', 'form'],  // 处理所有类型（默认）
+htmlPathRewriteScope: ['link', 'style', 'script', 'image', 'media', 'iframe', 'form'],  // 处理所有类型（默认）
+
+// 使用 all 关键字
+htmlPathRewriteScope: 'all'    // 所有类型
 
 // 常用组合示例
 htmlPathRewriteScope: ['link', 'form'],           // 仅链接和表单
@@ -393,14 +396,18 @@ htmlPathRewriteScope: []
 ```
 
 **可选值：**
+
 - `link`: a 标签的 href
 - `style`: link 标签的 href（样式文件）
 - `script`: script 标签的 src
 - `image`: img 标签的 src
 - `media`: video/audio 标签的 src
+- `iframe`: iframe 标签的 src
 - `form`: form 标签的 action
+- `all`: 所有类型
 
 当启用时，会将 HTML 中的相对路径转换为代理服务器的绝对路径：
+
 - `/css/style.css` → `https://proxy.com/https%3A%2F%2Fexample.com/css/style.css`
 
 #### 缓存配置 (disableCache)
@@ -468,7 +475,7 @@ const CONFIG = {
 	ipWhitelist: [],
 
 	// HTML 路径替换范围
-	htmlPathRewriteScope: ['link', 'style', 'script', 'image', 'media', 'form'],
+	htmlPathRewriteScope: ['link', 'style', 'script', 'image', 'media', 'iframe', 'form'],
 
 	// 禁用缓存
 	disableCache: true
