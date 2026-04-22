@@ -5,69 +5,7 @@
  * ⚠️ 免责声明：本项目仅供学习和技术研究使用，请勿用于任何违法、违规或破坏性用途。因滥用本项目导致的任何法律责任，由使用者自行承担。
  */
 
-// ==================== 配置区域 ====================
-const CONFIG = {
-	// 请求超时时间（毫秒），设置为 0 表示不限制
-	timeout: 0,
-
-	// 请求体大小限制（字节），默认 10MB，设置为 0 表示不限制
-	maxRequestBodySize: 10 * 1024 * 1024,
-
-	// 允许的请求方法，设置为空数组表示不限制
-	allowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS', 'PATCH'],
-
-	// 要过滤的请求头前缀（这些开头的请求头将被移除）
-	// 例如：['cf-'] 会过滤所有 cf- 开头的请求头
-	filteredHeaderPrefixes: ['cf-'],
-
-	// 要过滤的敏感请求头（这些请求头将被移除，防止泄露认证信息）
-	// 设置为空数组表示不过滤任何敏感请求头
-	filteredSensitiveHeaders: [
-		'cookie', // Cookie 凭证
-		'authorization', // 认证信息（如 Token、Bearer Token）
-		'proxy-authorization', // 代理认证信息
-		'proxy-authenticate', // 代理认证响应
-		'sec-websocket-key', // WebSocket 密钥
-		'sec-websocket-protocol' // WebSocket 协议
-	],
-
-	// 代理地址黑白名单
-	// mode: 'whitelist'（白名单 - 仅允许列表中的地址）, 'blacklist'（黑名单 - 禁止列表中的地址）, 'none'（不限制）
-	urlAccessControl: {
-		mode: 'none',
-		// 白名单/黑名单列表，支持完整 URL 或域名（可使用通配符 *）
-		// 示例：['example.com', '*.google.com', 'https://api.test.com/path']
-		urls: []
-	},
-
-	// 内容替换规则
-	// type: 替换方式 - 'replace'（简单替换）, 'regex'（正则替换）, 'exact'（精确匹配）
-	// direction: 作用方向 - 'request'（请求体）, 'response'（响应体）, 'both'（两者都）
-	// jsonMode: JSON 替换模式 - 'whole'（整体替换，默认）, 'keyValue'（key-value 单独替换，仅对 JSON 有效）
-	replaceRules: [
-		// 示例：
-		// { type: 'regex', pattern: '旧内容', replacement: '新内容', direction: 'both' },
-		// { type: 'replace', pattern: '旧字符串', replacement: '新字符串', direction: 'response' },
-		// { type: 'exact', pattern: '完整匹配内容', replacement: '替换内容', direction: 'request' },
-		// { type: 'replace', pattern: 'oldKey', replacement: 'newKey', direction: 'request', jsonMode: 'keyValue' }, // 替换 JSON 的 key
-		// { type: 'replace', pattern: 'oldValue', replacement: 'newValue', direction: 'request', jsonMode: 'keyValue' }, // 替换 JSON 的 value
-	],
-
-	// 默认首页（根路径 /）配置
-	homePage: {
-		// 状态码：200、404、500 等，设置为 null 表示返回空响应
-		statusCode: 200,
-		// 返回的文本内容
-		content: 'Proxy Service Running'
-	},
-
-	// 是否禁用响应缓存
-	disableCache: true,
-
-	// 是否启用 HTML 相对路径替换（将 HTML 中的 /xxx 转换为绝对路径）
-	enableHtmlPathRewrite: true
-};
-// ==================== 配置区域结束 ====================
+import CONFIG from './config.js';
 
 addEventListener('fetch', (event) => {
 	event.respondWith(handleRequest(event.request));
@@ -447,27 +385,31 @@ function handleRedirect(response, actualUrlStr) {
  * @returns {string} 处理后的 HTML 文本
  */
 function handleHtmlContent(text, protocol, host, actualUrlStr) {
-	const origin = new URL(actualUrlStr).origin;
-	// 移除 protocol 中的冒号，得到纯协议名如 https
+	const targetOrigin = new URL(actualUrlStr).origin;
 	const protocolName = protocol.replace(':', '');
-	// 替换 href="/xxx", src="/xxx", action="/xxx" 中的 /
-	// 替换为代理服务器的绝对路径 https://host/targetOrigin/xxx
-	const regex = /((href|src|action)=["\'])(?!\/)([^"']+)/g;
-	return text.replace(regex, `$1${protocolName}//${host}/${origin}/$3`);
-}
 
-/**
- * 替换 HTML 内容中的相对路径（旧版本，保留兼容性）
- * @param {string} text - 原始 HTML 文本
- * @param {string} protocol - 当前代理的协议
- * @param {string} host - 当前代理的主机名
- * @param {string} origin - 原始请求的目标 Origin
- * @returns {string} 替换后的 HTML 文本
- */
-function replaceRelativePaths(text, protocol, host, origin) {
-	const protocolName = protocol.replace(':', '');
-	const regex = /((href|src|action)=["\'])(?!\/)([^"']+)/g;
-	return text.replace(regex, `$1${protocolName}//${host}/${origin}/$3`);
+	// 处理相对路径（以 / 开头，但不是 // 开头）
+	// 例如：href="/css/style.css" → href="https://proxy.com/https%3A%2F%2Fexample.com/css/style.css"
+	const relativeRegex = /((href|src|action)=["\'])(\/[^"']*)/g;
+	text = text.replace(relativeRegex, (match, prefix, attr, path) => {
+		const encodedTarget = encodeURIComponent(targetOrigin);
+		return `${prefix}${protocolName}//${host}/${encodedTarget}${path}`;
+	});
+
+	// 处理绝对路径（完整的 URL，以 http:// 或 https:// 开头）
+	// 例如：href="https://www.xxx.com/xxx" → href="https://proxy.com/https%3A%2F%2Fwww.xxx.com/xxx"
+	const absoluteRegex = /((href|src|action)=["\'])((?:https?:)?\/\/[^"']*)/g;
+	text = text.replace(absoluteRegex, (match, prefix, attr, url) => {
+		// 确保 URL 有协议
+		let fullUrl = url;
+		if (!url.startsWith('http://') && !url.startsWith('https://')) {
+			fullUrl = 'https:' + url;
+		}
+		const encodedUrl = encodeURIComponent(fullUrl);
+		return `${prefix}${protocolName}//${host}/${encodedUrl}`;
+	});
+
+	return text;
 }
 
 /**
