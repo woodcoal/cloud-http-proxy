@@ -5,7 +5,86 @@
  * ⚠️ 免责声明：本项目仅供学习和技术研究使用，请勿用于任何违法、违规或破坏性用途。因滥用本项目导致的任何法律责任，由使用者自行承担。
  */
 
-import CONFIG from './config.js';
+// ==================== 配置区域 ====================
+const CONFIG = {
+	// ==================== 请求相关配置 ====================
+
+	// 请求超时时间（毫秒），设置为 0 表示不限制
+	timeout: 0,
+
+	// 请求体大小限制（字节），默认 10MB，设置为 0 表示不限制
+	maxRequestBodySize: 10 * 1024 * 1024,
+
+	// 允许的请求方法，设置为空数组表示不限制
+	allowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS', 'PATCH'],
+
+	// ==================== 请求头过滤配置 ====================
+
+	// 要过滤的请求头前缀（这些开头的请求头将被移除）
+	// 例如：['cf-'] 会过滤所有 cf- 开头的请求头
+	filteredHeaderPrefixes: ['cf-'],
+
+	// 要过滤的敏感请求头（这些请求头将被移除，防止泄露认证信息）
+	// 设置为空数组表示不过滤任何敏感请求头
+	filteredSensitiveHeaders: [
+		'cookie', // Cookie 凭证
+		'authorization', // 认证信息（如 Token、Bearer Token）
+		'proxy-authorization', // 代理认证信息
+		'proxy-authenticate', // 代理认证响应
+		'sec-websocket-key', // WebSocket 密钥
+		'sec-websocket-protocol' // WebSocket 协议
+	],
+
+	// ==================== 访问控制配置 ====================
+
+	// 代理地址黑白名单
+	urlAccessControl: {
+		mode: 'none', // 'whitelist'（白名单）, 'blacklist'（黑名单）, 'none'（不限制）
+		urls: [] // 地址列表
+	},
+
+	// ==================== 内容替换配置 ====================
+
+	// 内容替换规则
+	// type: 替换方式 - 'replace'（简单替换）, 'regex'（正则替换）, 'exact'（精确匹配）
+	// direction: 作用方向 - 'request'（请求体）, 'response'（响应体）, 'both'（两者都）
+	// jsonMode: JSON 替换模式 - 'whole'（整体替换，默认）, 'keyValue'（key-value 单独替换，仅对 JSON 有效）
+	replaceRules: [
+		// 示例：
+		// { type: 'regex', pattern: '旧内容', replacement: '新内容', direction: 'both' },
+		// { type: 'replace', pattern: '旧字符串', replacement: '新字符串', direction: 'response' },
+		// { type: 'exact', pattern: '完整匹配内容', replacement: '替换内容', direction: 'request' },
+		// { type: 'replace', pattern: 'oldKey', replacement: 'newKey', direction: 'request', jsonMode: 'keyValue' }, // 替换 JSON 的 key
+		// { type: 'replace', pattern: 'oldValue', replacement: 'newValue', direction: 'request', jsonMode: 'keyValue' }, // 替换 JSON 的 value
+	],
+
+	// ==================== 首页配置 ====================
+
+	// 默认首页（根路径 /）配置
+	homePage: {
+		// 状态码：200、404、500 等，设置为 null 表示返回空响应
+		statusCode: 404,
+
+		// 返回的文本内容
+		content: ''
+	},
+
+	// ==================== HTML 路径配置 ====================
+
+	// HTML 路径替换范围（数组形式，可组合）
+	// 'link': a 标签的 href
+	// 'style': link 标签的 href（样式文件）
+	// 'script': script 标签的 src
+	// 'image': img 标签的 src
+	// 'form': form 标签的 action
+	// 设置为 false 禁用，或空数组 []
+	htmlPathRewriteScope: ['link', 'style', 'script', 'image', 'form'],
+
+	// ==================== 缓存配置 ====================
+
+	// 是否禁用响应缓存
+	disableCache: true
+};
 
 addEventListener('fetch', (event) => {
 	event.respondWith(handleRequest(event.request));
@@ -94,10 +173,11 @@ async function handleRequest(request) {
 
 		// 处理 HTML 内容中的相对路径（需要先读取 body）
 		let body = response.body;
-		if (
-			CONFIG.enableHtmlPathRewrite &&
-			response.headers.get('Content-Type')?.includes('text/html')
-		) {
+		const htmlScope = CONFIG.htmlPathRewriteScope;
+		const isHtmlRewriteEnabled =
+			htmlScope && (typeof htmlScope !== 'object' || htmlScope.length > 0);
+
+		if (isHtmlRewriteEnabled && response.headers.get('Content-Type')?.includes('text/html')) {
 			// 创建一个新的 Response 来保存 body，防止被消耗后无法再次读取
 			const text = await new Response(body).text();
 			const processedText = handleHtmlContent(text, url.protocol, url.host, actualUrlStr);
@@ -388,25 +468,65 @@ function handleHtmlContent(text, protocol, host, actualUrlStr) {
 	const targetOrigin = new URL(actualUrlStr).origin;
 	const protocolName = protocol.replace(':', '');
 
-	// 处理相对路径（以 / 开头，但不是 // 开头）
-	// 例如：href="/css/style.css" → href="https://proxy.com/https%3A%2F%2Fexample.com/css/style.css"
-	const relativeRegex = /((href|src|action)=["\'])(\/[^"']*)/g;
-	text = text.replace(relativeRegex, (match, prefix, attr, path) => {
-		const encodedTarget = encodeURIComponent(targetOrigin);
-		return `${prefix}${protocolName}//${host}/${encodedTarget}${path}`;
-	});
+	// scope 类型到标签和属性的映射
+	const scopeConfig = {
+		link: { tag: 'a', attr: 'href' },
+		style: { tag: 'link', attr: 'href' },
+		script: { tag: 'script', attr: 'src' },
+		image: { tag: 'img', attr: 'src' },
+		form: { tag: 'form', attr: 'action' }
+	};
 
-	// 处理绝对路径（完整的 URL，以 http:// 或 https:// 开头）
-	// 例如：href="https://www.xxx.com/xxx" → href="https://proxy.com/https%3A%2F%2Fwww.xxx.com/xxx"
-	const absoluteRegex = /((href|src|action)=["\'])((?:https?:)?\/\/[^"']*)/g;
-	text = text.replace(absoluteRegex, (match, prefix, attr, url) => {
-		// 确保 URL 有协议
-		let fullUrl = url;
-		if (!url.startsWith('http://') && !url.startsWith('https://')) {
-			fullUrl = 'https:' + url;
-		}
-		const encodedUrl = encodeURIComponent(fullUrl);
-		return `${prefix}${protocolName}//${host}/${encodedUrl}`;
+	// 获取配置
+	const scope = CONFIG.htmlPathRewriteScope;
+
+	// 如果是 false 或空数组，直接返回
+	if (!scope || (Array.isArray(scope) && scope.length === 0)) {
+		return text;
+	}
+
+	// 收集要处理的 scope（支持数组或单个值）
+	const scopes = Array.isArray(scope) ? scope : [scope];
+
+	// 处理每种 scope 类型
+	scopes.forEach((s) => {
+		const config = scopeConfig[s];
+		if (!config) return;
+
+		const { tag, attr } = config;
+		const attrPattern = attr;
+
+		// 处理相对路径（以 / 开头）
+		const relativeRegex = new RegExp(
+			`<${tag}[^>]*\\s+${attrPattern}=["\'](\\/[^"\']*)["']`,
+			'gi'
+		);
+		text = text.replace(relativeRegex, (match, path) => {
+			if (path.includes(host)) {
+				return match;
+			}
+			const encodedTarget = encodeURIComponent(targetOrigin);
+			return match.replace(path, `${protocolName}://${host}/${encodedTarget}${path}`);
+		});
+
+		// 处理绝对路径（http://, https://, // 开头）
+		const absoluteRegex = new RegExp(
+			`<${tag}[^>]*\\s+${attrPattern}=["\']((?:https?:)?\\/\\/[^"\']*)["']`,
+			'gi'
+		);
+		text = text.replace(absoluteRegex, (match, url) => {
+			// 检查是否已经是代理地址
+			if (url.startsWith(`https://${host}/`) || url.startsWith(`http://${host}/`)) {
+				return match;
+			}
+			// 确保 URL 有协议
+			let fullUrl = url;
+			if (!url.startsWith('http://') && !url.startsWith('https://')) {
+				fullUrl = 'https:' + url;
+			}
+			const encodedUrl = encodeURIComponent(fullUrl);
+			return match.replace(url, `${protocolName}://${host}/${encodedUrl}`);
+		});
 	});
 
 	return text;

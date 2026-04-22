@@ -18,9 +18,8 @@
 ## 项目结构
 
 ```
-├── worker.js         # 主代理逻辑
-├── config.js         # 配置文件（可独立维护）
-└── README.md         # 说明文档
+├── worker.js   # 主代理逻辑（包含配置）
+└── README.md   # 说明文档
 ```
 
 ## 快速开始
@@ -30,29 +29,8 @@
 1. 注册 [Cloudflare](https://www.cloudflare.com/) 账号
 2. 登录 Cloudflare Dashboard，进入 Workers 页面
 3. 点击"创建 Worker"
-4. 将 `worker.js` 和 `config.js` 的内容合并到一个文件中，**或者**在 `wrangler.toml` 中配置多文件支持
-
-### 使用 wrangler.toml 部署（推荐）
-
-创建 `wrangler.toml`：
-
-```toml
-name = "proxy-worker"
-main = "worker.js"
-compatibility_date = "2023-10-02"
-
-[site]
-bucket = "./"
-```
-
-然后使用 wrangler 部署：
-
-```bash
-npm install -g wrangler
-wrangler deploy
-```
-
-**注意**：如果你不使用 wrangler，可以将 `config.js` 中的 `CONFIG` 对象直接复制到 `proxy.worker.js` 中使用。
+4. 将 `worker.js` 的内容复制到编辑器中
+5. 点击"部署"
 
 ### 2. 使用方式
 
