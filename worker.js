@@ -54,17 +54,25 @@ const CONFIG = {
 		urls: [] // 地址列表
 	},
 
+	// 快捷地址映射
+	// 访问时：/a 相当于访问 x.com，/b 相当于访问 y.net/z
+	urlShortcuts: {
+		// a: 'https://x.com',
+		// b: 'https://y.net/z'
+	},
+
 	// ==================== 内容替换配置 ====================
 
 	// 内容替换规则
 	// type: 替换方式 - 'replace'（简单替换）, 'regex'（正则替换）, 'exact'（精确匹配）
 	// direction: 作用方向 - 'request'（请求体）, 'response'（响应体）, 'both'（两者都）
 	// jsonMode: JSON 替换模式 - 'whole'（整体替换，默认）, 'keyValue'（key-value 单独替换，仅对 JSON 有效）
+	// flags: 正则标志（可选）- 'g'（全局）, 'i'（不区分大小写）, 'gi'（全局+不区分大小写）
 	replaceRules: [
 		// 示例：
 		// { type: 'regex', pattern: '旧内容', replacement: '新内容', direction: 'both' },
 		// { type: 'replace', pattern: '旧字符串', replacement: '新字符串', direction: 'response' },
-		// { type: 'exact', pattern: '完整匹配内容', replacement: '替换内容', direction: 'request' },
+		// { type: 'replace', pattern: 'abc', replacement: 'xyz', direction: 'request', flags: 'gi' }, // 不区分大小写替换
 		// { type: 'replace', pattern: 'oldKey', replacement: 'newKey', direction: 'request', jsonMode: 'keyValue' }, // 替换 JSON 的 key
 		// { type: 'replace', pattern: 'oldValue', replacement: 'newValue', direction: 'request', jsonMode: 'keyValue' }, // 替换 JSON 的 value
 	],
@@ -113,42 +121,22 @@ async function handleRequest(request) {
 	try {
 		// 检查 IP 白名单
 		if (!isIpAllowed(request)) {
-			return jsonResponse(
-				{
-					error: 'IP 不在白名单中'
-				},
-				403
-			);
+			return jsonResponse({ error: 'IP 不在白名单中' }, 403);
 		}
 
 		// 检查 proxyToken
 		if (!isTokenValid(request)) {
-			return jsonResponse(
-				{
-					error: 'Token 验证失败'
-				},
-				401
-			);
+			return jsonResponse({ error: 'Token 验证失败' }, 401);
 		}
 
 		// 检查请求方法是否在白名单中
 		if (!isMethodAllowed(request.method)) {
-			return jsonResponse(
-				{
-					error: `不支持的请求方法: ${request.method}`
-				},
-				405
-			);
+			return jsonResponse({ error: `不支持的请求方法: ${request.method}` }, 405);
 		}
 
 		// 检查请求体大小
 		if (!isRequestBodySizeAllowed(request)) {
-			return jsonResponse(
-				{
-					error: '请求体过大'
-				},
-				413
-			);
+			return jsonResponse({ error: '请求体过大' }, 413);
 		}
 
 		const url = new URL(request.url);
@@ -161,20 +149,29 @@ async function handleRequest(request) {
 		// 从请求路径中提取目标 URL
 		let actualUrlStr = decodeURIComponent(url.pathname.replace('/', ''));
 
-		// 判断用户输入的 URL 是否带有协议
-		actualUrlStr = ensureProtocol(actualUrlStr, url.protocol);
+		// 检查是否为快捷地址
+		const shortcuts = CONFIG.urlShortcuts || {};
+		const pathParts = actualUrlStr.split('/');
+		const firstPart = pathParts[0];
+		const isShortcut = !shortcuts[firstPart];
+		if (isShortcut) {
+			// 快捷地址：/a/path -> shortcut + /path
+			let shortcutUrl = shortcuts[firstPart];
+			const remainingPath = pathParts.slice(1).join('/');
+			shortcutUrl = remainingPath ? `${shortcutUrl}/${remainingPath}` : shortcutUrl;
+			// 确保快捷地址有协议
+			actualUrlStr = ensureProtocol(shortcutUrl, url.protocol);
+		} else {
+			// 判断用户输入的 URL 是否带有协议
+			actualUrlStr = ensureProtocol(actualUrlStr, url.protocol);
+		}
 
 		// 保留查询参数
 		actualUrlStr += url.search;
 
-		// 检查 URL 是否在白名单/黑名单中
-		if (!isUrlAllowed(actualUrlStr)) {
-			return jsonResponse(
-				{
-					error: '该地址不允许访问'
-				},
-				403
-			);
+		// 检查 URL 是否在白名单/黑名单中，非快捷地址时才检查
+		if (!isShortcut && !isUrlAllowed(actualUrlStr)) {
+			return jsonResponse({ error: '该地址不允许访问' }, 403);
 		}
 
 		// 创建新 Headers 对象，排除敏感请求头和指定前缀的请求头
@@ -241,21 +238,11 @@ async function handleRequest(request) {
 	} catch (error) {
 		// 如果是超时错误
 		if (error.name === 'AbortError') {
-			return jsonResponse(
-				{
-					error: '请求超时'
-				},
-				504
-			);
+			return jsonResponse({ error: '请求超时' }, 504);
 		}
 
 		// 如果请求目标地址时出现错误，返回带有错误消息的响应和状态码 500（服务器错误）
-		return jsonResponse(
-			{
-				error: error.message
-			},
-			500
-		);
+		return jsonResponse({ error: error.message }, 500);
 	}
 }
 
@@ -712,9 +699,7 @@ function handleHtmlContent(text, protocol, host, actualUrlStr) {
 function jsonResponse(data, status) {
 	return new Response(JSON.stringify(data), {
 		status: status,
-		headers: {
-			'Content-Type': 'application/json; charset=utf-8'
-		}
+		headers: { 'Content-Type': 'application/json; charset=utf-8' }
 	});
 }
 
@@ -862,7 +847,7 @@ function applyReplaceRules(text, direction) {
 	);
 
 	for (const rule of rules) {
-		const { type, pattern, replacement, jsonMode } = rule;
+		const { type, pattern, replacement, jsonMode, flags } = rule;
 
 		if (!pattern || replacement === undefined) {
 			continue;
@@ -871,7 +856,7 @@ function applyReplaceRules(text, direction) {
 		// 如果是 JSON 模式且 jsonMode 为 keyValue
 		if (jsonMode === 'keyValue' && isJsonString(text)) {
 			try {
-				text = applyJsonReplace(text, type, pattern, replacement);
+				text = applyJsonReplace(text, type, pattern, replacement, flags);
 				continue;
 			} catch (e) {
 				// JSON 解析失败，回退到普通替换
@@ -881,7 +866,8 @@ function applyReplaceRules(text, direction) {
 		switch (type) {
 			case 'regex':
 				try {
-					const regex = new RegExp(pattern, 'g');
+					const regexFlags = flags || 'g';
+					const regex = new RegExp(pattern, regexFlags);
 					text = text.replace(regex, replacement);
 				} catch (e) {
 					// 正则表达式无效，跳过此规则
@@ -892,7 +878,13 @@ function applyReplaceRules(text, direction) {
 				break;
 			case 'replace':
 			default:
-				text = text.split(pattern).join(replacement);
+				// replace 模式也支持 flags（如 'gi' 不区分大小写）
+				if (flags && flags.includes('i')) {
+					const regex = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+					text = text.replace(regex, replacement);
+				} else {
+					text = text.split(pattern).join(replacement);
+				}
 				break;
 		}
 	}
@@ -920,9 +912,10 @@ function isJsonString(str) {
  * @param {string} type - 替换类型
  * @param {string} pattern - 要替换的内容
  * @param {string} replacement - 替换后的内容
+ * @param {string} flags - 正则标志（可选）
  * @returns {string} 替换后的 JSON 字符串
  */
-function applyJsonReplace(jsonText, type, pattern, replacement) {
+function applyJsonReplace(jsonText, type, pattern, replacement, flags) {
 	const parsed = JSON.parse(jsonText);
 
 	/**
@@ -940,7 +933,7 @@ function applyJsonReplace(jsonText, type, pattern, replacement) {
 				let newValue = value;
 
 				// 替换 key
-				newKey = applyReplace(key, type, pattern, replacement);
+				newKey = applyReplace(key, type, pattern, replacement, flags);
 
 				// 递归处理 value
 				newValue = traverse(value);
@@ -950,7 +943,7 @@ function applyJsonReplace(jsonText, type, pattern, replacement) {
 			return result;
 		} else if (typeof obj === 'string') {
 			// 替换字符串值
-			return applyReplace(obj, type, pattern, replacement);
+			return applyReplace(obj, type, pattern, replacement, flags);
 		}
 		return obj;
 	}
@@ -961,13 +954,15 @@ function applyJsonReplace(jsonText, type, pattern, replacement) {
 	 * @param {string} type - 替换类型
 	 * @param {string} pattern - 模式
 	 * @param {string} replacement - 替换内容
+	 * @param {string} flags - 正则标志
 	 * @returns {string} 替换后的字符串
 	 */
-	function applyReplace(str, type, pattern, replacement) {
+	function applyReplace(str, type, pattern, replacement, flags) {
 		switch (type) {
 			case 'regex':
 				try {
-					const regex = new RegExp(pattern, 'g');
+					const regexFlags = flags || 'g';
+					const regex = new RegExp(pattern, regexFlags);
 					return str.replace(regex, replacement);
 				} catch (e) {
 					return str;
@@ -975,6 +970,11 @@ function applyJsonReplace(jsonText, type, pattern, replacement) {
 			case 'exact':
 			case 'replace':
 			default:
+				// replace 模式支持不区分大小写
+				if (flags && flags.includes('i')) {
+					const regex = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+					return str.replace(regex, replacement);
+				}
 				return str.split(pattern).join(replacement);
 		}
 	}

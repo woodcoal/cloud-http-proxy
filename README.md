@@ -91,6 +91,9 @@ const CONFIG = {
 		urls: [] // 地址列表
 	},
 
+	// 快捷地址映射
+	urlShortcuts: {},
+
 	// ==================== 内容替换配置 ====================
 
 	// 内容替换规则
@@ -318,6 +321,12 @@ replaceRules: [
 - `whole`（默认）：整体替换，将 JSON 当作普通文本处理
 - `keyValue`：递归遍历 JSON 对象，替换所有的 key 和 string 类型的 value
 
+**flags 参数（可选）：**
+
+- `g`：全局替换
+- `i`：不区分大小写
+- `gi`：全局 + 不区分大小写
+
 **示例：**
 
 ```javascript
@@ -329,6 +338,11 @@ replaceRules: [
 // 移除响应中的广告脚本
 replaceRules: [
 	{ type: 'regex', pattern: '<script>.*?ads.*?</script>', replacement: '', direction: 'response' }
+];
+
+// 不区分大小写替换
+replaceRules: [
+	{ type: 'replace', pattern: 'abc def', replacement: 'xyz', direction: 'request', flags: 'gi' }
 ];
 
 // 替换 JSON 请求中的字段名
@@ -396,7 +410,6 @@ htmlPathRewriteScope: []
 ```
 
 **可选值：**
-
 - `link`: a 标签的 href
 - `style`: link 标签的 href（样式文件）
 - `script`: script 标签的 src
@@ -407,7 +420,6 @@ htmlPathRewriteScope: []
 - `all`: 所有类型
 
 当启用时，会将 HTML 中的相对路径转换为代理服务器的绝对路径：
-
 - `/css/style.css` → `https://proxy.com/https%3A%2F%2Fexample.com/css/style.css`
 
 #### 缓存配置 (disableCache)
