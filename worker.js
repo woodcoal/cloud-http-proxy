@@ -153,7 +153,7 @@ async function handleRequest(request) {
 		const shortcuts = CONFIG.urlShortcuts || {};
 		const pathParts = actualUrlStr.split('/');
 		const firstPart = pathParts[0];
-		const isShortcut = !shortcuts[firstPart];
+		const isShortcut = !!shortcuts[firstPart];
 		if (isShortcut) {
 			// 快捷地址：/a/path -> shortcut + /path
 			let shortcutUrl = shortcuts[firstPart];
