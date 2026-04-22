@@ -106,10 +106,18 @@ const CONFIG = {
 		content: 'Proxy Service Running' // 返回的文本内容
 	},
 
+	// ==================== 认证配置 ====================
+
+	// 代理访问密钥
+	proxyToken: '',
+
+	// IP 白名单
+	ipWhitelist: [],
+
 	// ==================== HTML 路径配置 ====================
 
-	// 是否启用 HTML 相对路径替换
-	enableHtmlPathRewrite: true,
+	// HTML 路径替换范围（数组形式，可组合）
+	htmlPathRewriteScope: ['link', 'style', 'script', 'image', 'media', 'form'],
 
 	// ==================== 缓存配置 ====================
 
@@ -133,6 +141,31 @@ timeout: 0; // 不限制超时
 maxRequestBodySize: 10 * 1024 * 1024; // 10MB
 maxRequestBodySize: 5 * 1024 * 1024; // 5MB
 maxRequestBodySize: 0; // 不限制
+```
+
+#### 代理访问密钥 (proxyToken)
+
+```javascript
+proxyToken: 'your-secret-token'; // 设置密钥
+proxyToken: ''; // 不验证（默认）
+```
+
+请求时需要在 Header 中添加 `x-proxy-key: your-secret-token`
+
+#### IP 白名单 (ipWhitelist)
+
+```javascript
+// 多个 IP
+ipWhitelist: ['192.168.1.1', '10.0.0.1'];
+
+// 通配符匹配
+ipWhitelist: ['192.168.1.*', '10.0.*.*'];
+
+// CIDR 格式
+ipWhitelist: ['192.168.0.0/16', '10.0.0.0/8'];
+
+// 禁用
+ipWhitelist: [];
 ```
 
 #### 请求方法白名单 (allowedMethods)
@@ -343,17 +376,32 @@ homePage: {
 }
 ```
 
-#### HTML 路径重写 (enableHtmlPathRewrite)
+#### HTML 路径重写 (htmlPathRewriteScope)
 
 ```javascript
-enableHtmlPathRewrite: true; // 启用 HTML 相对路径替换（默认）
-enableHtmlPathRewrite: false; // 禁用，保留原始路径
+// 数组形式，可自由组合
+htmlPathRewriteScope: ['link', 'style', 'script', 'image', 'media', 'form'],  // 处理所有类型（默认）
+
+// 常用组合示例
+htmlPathRewriteScope: ['link', 'form'],           // 仅链接和表单
+htmlPathRewriteScope: ['style', 'script', 'image', 'media'], // 样式、脚本、图片、视频/音频
+htmlPathRewriteScope: ['link'],                   // 仅链接
+
+// 禁用
+htmlPathRewriteScope: false
+htmlPathRewriteScope: []
 ```
 
-当启用时，会将 HTML 中的相对路径转换为代理服务器的绝对路径：
+**可选值：**
+- `link`: a 标签的 href
+- `style`: link 标签的 href（样式文件）
+- `script`: script 标签的 src
+- `image`: img 标签的 src
+- `media`: video/audio 标签的 src
+- `form`: form 标签的 action
 
-- `/css/style.css` → `https://proxy.com/https://example.com/css/style.css`
-- 适用于 `href`、`src`、`action` 属性
+当启用时，会将 HTML 中的相对路径转换为代理服务器的绝对路径：
+- `/css/style.css` → `https://proxy.com/https%3A%2F%2Fexample.com/css/style.css`
 
 #### 缓存配置 (disableCache)
 
@@ -412,6 +460,15 @@ const CONFIG = {
 		statusCode: 200,
 		content: 'Proxy Service Running'
 	},
+
+	// 代理访问密钥
+	proxyToken: '',
+
+	// IP 白名单
+	ipWhitelist: [],
+
+	// HTML 路径替换范围
+	htmlPathRewriteScope: ['link', 'style', 'script', 'image', 'media', 'form'],
 
 	// 禁用缓存
 	disableCache: true

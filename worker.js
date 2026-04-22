@@ -18,6 +18,17 @@ const CONFIG = {
 	// 允许的请求方法，设置为空数组表示不限制
 	allowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS', 'PATCH'],
 
+	// ==================== 认证配置 ====================
+
+	// 代理访问密钥，请求头 x-proxy-key 需要与此匹配才能访问
+	// 设置为空字符串或不设置则不验证
+	proxyToken: '',
+
+	// IP 白名单，设置为空数组表示不限制
+	// 支持 IPv4 和 IPv6 格式，可使用 * 通配符
+	// 例如：['192.168.1.1', '10.0.0.*', '172.16.0.0/16']
+	ipWhitelist: [],
+
 	// ==================== 请求头过滤配置 ====================
 
 	// 要过滤的请求头前缀（这些开头的请求头将被移除）
@@ -76,9 +87,10 @@ const CONFIG = {
 	// 'style': link 标签的 href（样式文件）
 	// 'script': script 标签的 src
 	// 'image': img 标签的 src
+	// 'media': video/audio 标签的 src
 	// 'form': form 标签的 action
 	// 设置为 false 禁用，或空数组 []
-	htmlPathRewriteScope: ['link', 'style', 'script', 'image', 'form'],
+	htmlPathRewriteScope: ['link', 'style', 'script', 'image', 'media', 'form'],
 
 	// ==================== 缓存配置 ====================
 
@@ -97,6 +109,26 @@ addEventListener('fetch', (event) => {
  */
 async function handleRequest(request) {
 	try {
+		// 检查 IP 白名单
+		if (!isIpAllowed(request)) {
+			return jsonResponse(
+				{
+					error: 'IP 不在白名单中'
+				},
+				403
+			);
+		}
+
+		// 检查 proxyToken
+		if (!isTokenValid(request)) {
+			return jsonResponse(
+				{
+					error: 'Token 验证失败'
+				},
+				401
+			);
+		}
+
 		// 检查请求方法是否在白名单中
 		if (!isMethodAllowed(request.method)) {
 			return jsonResponse(
@@ -174,9 +206,7 @@ async function handleRequest(request) {
 		// 处理 HTML 内容中的相对路径（需要先读取 body）
 		let body = response.body;
 		const htmlScope = CONFIG.htmlPathRewriteScope;
-		const isHtmlRewriteEnabled =
-			htmlScope && (typeof htmlScope !== 'object' || htmlScope.length > 0);
-
+		const isHtmlRewriteEnabled = htmlScope && Array.isArray(htmlScope) && htmlScope.length > 0;
 		if (isHtmlRewriteEnabled && response.headers.get('Content-Type')?.includes('text/html')) {
 			// 创建一个新的 Response 来保存 body，防止被消耗后无法再次读取
 			const text = await new Response(body).text();
@@ -251,6 +281,110 @@ function handleHomePage() {
 }
 
 /**
+ * 检查 IP 是否在白名单中
+ * @param {Request} request - 请求对象
+ * @returns {boolean} 是否允许
+ */
+function isIpAllowed(request) {
+	const ipWhitelist = CONFIG.ipWhitelist;
+
+	// 如果白名单为空，不限制
+	if (!ipWhitelist || ipWhitelist.length === 0) {
+		return true;
+	}
+
+	// 获取客户端 IP（Cloudflare 会通过 cf-connecting-ip 提供）
+	const clientIp = request.headers.get('cf-connecting-ip') || 
+	                 request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
+	                 'unknown';
+
+	for (const pattern of ipWhitelist) {
+		if (matchIpPattern(clientIp, pattern)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * 检查客户端 IP 是否匹配白名单模式
+ * @param {string} clientIp - 客户端 IP
+ * @param {string} pattern - 白名单模式
+ * @returns {boolean} 是否匹配
+ */
+function matchIpPattern(clientIp, pattern) {
+	// 完全匹配
+	if (clientIp === pattern) {
+		return true;
+	}
+
+	// 通配符匹配（如 192.168.1.*）
+	if (pattern.includes('*')) {
+		const regexPattern = pattern.replace(/\./g, '\\.').replace(/\*/g, '.*');
+		const regex = new RegExp(`^${regexPattern}$`);
+		return regex.test(clientIp);
+	}
+
+	// CIDR 匹配（如 192.168.0.0/16）
+	if (pattern.includes('/')) {
+		return cidrMatch(clientIp, pattern);
+	}
+
+	return false;
+}
+
+/**
+ * 检查 IP 是否在 CIDR 范围内
+ * @param {string} ip - IP 地址
+ * @param {string} cidr - CIDR 格式（如 192.168.0.0/16）
+ * @returns {boolean} 是否在范围内
+ */
+function cidrMatch(ip, cidr) {
+	const [range, bits] = cidr.split('/');
+	const bitsNum = parseInt(bits);
+	
+	// 处理 /0 的情况（匹配所有 IP）
+	if (bitsNum === 0) {
+		return true;
+	}
+	
+	// 使用无符号右移避免溢出
+	const mask = ~((1 << (32 - bitsNum)) - 1) >>> 0;
+
+	const ipNum = ipToNumber(ip);
+	const rangeNum = ipToNumber(range);
+
+	return ((ipNum & mask) >>> 0) === ((rangeNum & mask) >>> 0);
+}
+
+/**
+ * 将 IP 地址转换为数字
+ * @param {string} ip - IP 地址
+ * @returns {number} IP 数字
+ */
+function ipToNumber(ip) {
+	return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet), 0) >>> 0;
+}
+
+/**
+ * 检查 Token 是否有效
+ * @param {Request} request - 请求对象
+ * @returns {boolean} 是否有效
+ */
+function isTokenValid(request) {
+	const token = CONFIG.proxyToken;
+
+	// 如果 token 为空，不验证
+	if (!token) {
+		return true;
+	}
+
+	const requestToken = request.headers.get('x-proxy-key');
+	return requestToken === token;
+}
+
+/**
  * 检查请求方法是否被允许
  * @param {string} method - 请求方法
  * @returns {boolean} 是否允许
@@ -265,7 +399,7 @@ function isMethodAllowed(method) {
 /**
  * 检查请求体大小是否超限
  * @param {Request} request - 请求对象
- * @returns {boolean} 是否允许
+ * @returns {Promise<boolean>} 是否允许
  */
 async function isRequestBodySizeAllowed(request) {
 	if (CONFIG.maxRequestBodySize === 0) {
@@ -474,6 +608,7 @@ function handleHtmlContent(text, protocol, host, actualUrlStr) {
 		style: { tag: 'link', attr: 'href' },
 		script: { tag: 'script', attr: 'src' },
 		image: { tag: 'img', attr: 'src' },
+		media: { tag: '(?:video|audio)', attr: 'src' },
 		form: { tag: 'form', attr: 'action' }
 	};
 
@@ -481,7 +616,7 @@ function handleHtmlContent(text, protocol, host, actualUrlStr) {
 	const scope = CONFIG.htmlPathRewriteScope;
 
 	// 如果是 false 或空数组，直接返回
-	if (!scope || (Array.isArray(scope) && scope.length === 0)) {
+	if (!scope || !Array.isArray(scope) || scope.length === 0) {
 		return text;
 	}
 
