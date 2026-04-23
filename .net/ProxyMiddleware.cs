@@ -191,7 +191,7 @@ public class ProxyMiddleware
         if (error != ForwarderError.None && !context.Response.HasStarted)
         {
             var errorFeature = context.Features.Get<IForwarderErrorFeature>();
-            if (errorFeature?.Exception is TaskCanceledException || errorFeature?.Exception is TimeoutException)
+            if (errorFeature != null && (errorFeature.Exception is TaskCanceledException || errorFeature.Exception is TimeoutException))
             {
                 await JsonError(context, "请求超时", 504);
             }
