@@ -94,6 +94,12 @@ public class ProxyConfig {
      * 功能描述：是否禁用代理缓存。如果为 true，将在响应头中加入 no-store
      */
 	public bool DisableCache { get; set; } = true;
+
+	/**
+     * 属性名称：LogLevel
+     * 功能描述：日志输出级别：none（关闭）、error（仅错误）、info（常规记录）
+     */
+	public string LogLevel { get; set; } = "info";
 }
 
 /**

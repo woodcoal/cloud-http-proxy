@@ -1,6 +1,9 @@
-﻿using CloudHttpProxy;
+using CloudHttpProxy;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// 彻底禁用内置日志系统，避免系统信息干扰
+builder.Logging.ClearProviders();
 
 // 读取绑定配置
 var proxyConfigSection = builder.Configuration.GetSection("ProxyConfig");
@@ -20,6 +23,12 @@ var app = builder.Build();
 
 // 注册并应用核心代理中间件，接管所有 HTTP 请求的处理流程
 app.UseMiddleware<ProxyMiddleware>();
+
+// 获取配置判断是否需要输出启动日志
+var config = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProxyConfig>>().Value;
+if (!string.Equals(config.LogLevel, "none", StringComparison.OrdinalIgnoreCase)) {
+    Console.WriteLine($"[系统] 代理服务已启动: http://{bindIp}:{bindPort}");
+}
 
 // 启动 Web 服务
 app.Run();

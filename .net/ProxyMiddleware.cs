@@ -51,6 +51,7 @@ public class ProxyMiddleware {
 					   context.Request.Headers["CF-Connecting-IP"].FirstOrDefault() ?? "unknown";
 
 		if (!IpUtils.IsIpAllowed(clientIp, config.IpWhitelist)) {
+			Log(config, "error", $"拒绝 IP 访问: {clientIp} -> 地址: {context.Request.Path}{context.Request.QueryString}");
 			await JsonErrorAsync(context, "IP 不在白名单中", 403);
 			return;
 		}
@@ -58,6 +59,7 @@ public class ProxyMiddleware {
 		// 2. 验证代理 Token
 		if (!string.IsNullOrEmpty(config.ProxyToken) &&
 			context.Request.Headers["x-proxy-key"].FirstOrDefault() != config.ProxyToken) {
+			Log(config, "error", $"Token 鉴权失败: {clientIp} -> 地址: {context.Request.Path}{context.Request.QueryString}");
 			await JsonErrorAsync(context, "Token 验证失败", 401);
 			return;
 		}
@@ -71,6 +73,7 @@ public class ProxyMiddleware {
 
 		// 4. 验证请求体大小限制
 		if (config.MaxRequestBodySize > 0 && context.Request.ContentLength > config.MaxRequestBodySize) {
+			Log(config, "error", $"请求体超出限制 ({context.Request.ContentLength} > {config.MaxRequestBodySize}): {clientIp} -> {context.Request.Path}");
 			await JsonErrorAsync(context, "请求体过大", 413);
 			return;
 		}
@@ -114,12 +117,14 @@ public class ProxyMiddleware {
 
 		// 7. 目标 URL 访问黑白名单控制
 		if (!isShortcut && !IsUrlAllowed(actualUrlStr, config.UrlAccessControl)) {
+			Log(config, "error", $"URL 访问被拦截 (黑白名单限制): {actualUrlStr}");
 			await JsonErrorAsync(context, "该地址不允许访问", 403);
 			return;
 		}
 
 		// 8. 解析最终目标地址 URI
 		if (!Uri.TryCreate(actualUrlStr, UriKind.Absolute, out var targetUri)) {
+			Log(config, "error", $"无法解析的目标地址: {actualUrlStr}");
 			await JsonErrorAsync(context, "无效的目标地址", 400);
 			return;
 		}
@@ -161,12 +166,47 @@ public class ProxyMiddleware {
 		// 处理代理发生的内部错误
 		if (error != ForwarderError.None && !context.Response.HasStarted) {
 			var errorFeature = context.Features.Get<IForwarderErrorFeature>();
+			Log(config, "error", $"转发失败! 类型: {error}, 原因: {errorFeature?.Exception?.Message ?? "未知服务器错误"}, 地址: {actualUrlStr}");
 			if (errorFeature != null && (errorFeature.Exception is TaskCanceledException || errorFeature.Exception is TimeoutException)) {
-				await JsonErrorAsync(context, "请求超时", 504);
+				await JsonErrorAsync(context, "请求目标服务器超时", 504);
 			} else {
-				await JsonErrorAsync(context, errorFeature?.Exception?.Message ?? "Server Error", 500);
+				await JsonErrorAsync(context, errorFeature?.Exception?.Message ?? "服务器内部错误", 500);
 			}
 		}
+	}
+
+	/**
+     * 函数名称：Log
+     * 功能描述：自定义日志输出，支持中文、颜色标记以及日志级别过滤
+     */
+	public static void Log(ProxyConfig config, string level, string message) {
+		var configLevel = config.LogLevel?.ToLowerInvariant() ?? "info";
+		if (configLevel == "none") {
+			return;
+		}
+
+		if (configLevel == "error" && level != "error") {
+			return;
+		}
+
+		var time = DateTime.Now.ToString("HH:mm:ss");
+		var prefix = level switch {
+			"error" => "[错误]",
+			"info" => "[信息]",
+			"sys" => "[系统]",
+			_ => "[日志]"
+		};
+
+		// ANSI 颜色代码
+		var color = level switch {
+			"error" => "\x1b[31m", // 红色
+			"info" => "\x1b[32m",  // 绿色
+			"sys" => "\x1b[33m",   // 黄色
+			_ => "\x1b[0m"         // 默认
+		};
+
+		// 时间使用灰色 (\x1b[90m)，其余保持原样
+		Console.WriteLine($"\x1b[90m{time}\x1b[0m {color}{prefix}\x1b[0m {message}");
 	}
 
 	/**
@@ -288,6 +328,9 @@ public class ProxyMiddleware {
 			if (proxyResponse == null) {
 				return true;
 			}
+
+			// 记录完成情况
+			Log(_Config, "info", $"[{httpContext.Request.Method}] -> {_ActualUrlStr} [{(int) proxyResponse.StatusCode}]");
 
 			// 1. 处理 HTTP 3xx 重定向状态码
 			var status = (int) proxyResponse.StatusCode;
