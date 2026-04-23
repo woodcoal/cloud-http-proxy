@@ -89,24 +89,32 @@ public class ProxyMiddleware {
 		}
 
 		// 屏蔽浏览器自动探测代理根目录的 favicon.ico 导致的无效域名请求错误
-		if (context.Request.Path.Equals("/favicon.ico", StringComparison.OrdinalIgnoreCase)) {
+		if (context.Request.Path.Equals("/favicon.ico", StringComparison.OrdinalIgnoreCase) || context.Request.Path.Equals("/.env", StringComparison.OrdinalIgnoreCase)) {
 			context.Response.StatusCode = 404;
 			return;
 		}
 
 		// 6. 解析并构造目标 URL
-		var pathAndQuery = context.Request.Path.Value?.TrimStart('/') ?? "";
-		var actualUrlStr = Uri.UnescapeDataString(pathAndQuery);
+		var rawPath = context.Request.Path.Value?.TrimStart('/') ?? "";
+		if (string.IsNullOrEmpty(rawPath)) {
+			await JsonErrorAsync(context, "缺失目标地址", 400);
+			return;
+		}
+
+		string actualUrlStr;
 		var isShortcut = false;
 
-		var pathParts = actualUrlStr.Split('/', StringSplitOptions.RemoveEmptyEntries);
-		// 如果使用了 URL 快捷短链接配置，转换它
+		// 优先尝试从原始路径段中匹配快捷方式 (例如 /myalias/path -> 匹配 myalias)
+		var pathParts = rawPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
 		if (pathParts.Length > 0 && config.UrlShortcuts != null && config.UrlShortcuts.TryGetValue(pathParts[0], out var shortcutUrl)) {
 			isShortcut = true;
 			var remaining = string.Join('/', pathParts.Skip(1));
-			shortcutUrl = !string.IsNullOrEmpty(remaining) ? $"{shortcutUrl.TrimEnd('/')}/{remaining}" : shortcutUrl;
-			actualUrlStr = EnsureProtocol(shortcutUrl, context.Request.Scheme);
+			actualUrlStr = !string.IsNullOrEmpty(remaining) ? $"{shortcutUrl.TrimEnd('/')}/{remaining}" : shortcutUrl;
+			// 快捷方式配置可能也不带协议，统一补全
+			actualUrlStr = EnsureProtocol(actualUrlStr, context.Request.Scheme);
 		} else {
+			// 非快捷方式，则视为直接传递的 URL，先进行 URL 解码
+			actualUrlStr = Uri.UnescapeDataString(rawPath);
 			actualUrlStr = EnsureProtocol(actualUrlStr, context.Request.Scheme);
 		}
 

@@ -1,13 +1,48 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<VersionPrefix>1.26.424</VersionPrefix>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<PublishAot>False</PublishAot>
+		<Title>Http 代理</Title>
+		<Product>MuTan.CloudHttpProxy</Product>
+		<PackageId>$(ProjectName)</PackageId>
+		<Authors>木炭</Authors>
+		<Company>woodcoal.cn</Company>
+		<Copyright>Copyright © 2026 WOODCOAL</Copyright>
+		<PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
+		<PackageLicenseFile>LICENSE</PackageLicenseFile>
+		<NeutralLanguage>zh-CN</NeutralLanguage>
+		<isPackable>True</isPackable>
+		<PackageProjectUrl>https://github.com/woodcoal/cloud-http-proxy</PackageProjectUrl>
+		<Description>基于 .Net 的 Http 反向代理，支持修改资源内容</Description>
+		<RepositoryUrl>https://github.com/woodcoal/cloud-http-proxy</RepositoryUrl>
+		<PackageTags>CloudHttpProxy;Http;Proxy</PackageTags>
+		<RepositoryType>git</RepositoryType>
+		<Title>$(AssemblyName)</Title>
+		<IsPackable>True</IsPackable>
+		<GenerateAssemblyInfo>True</GenerateAssemblyInfo>
+		<WarningLevel>3</WarningLevel>
+		<SignAssembly>True</SignAssembly>
+		<DelaySign>False</DelaySign>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<GenerateDocumentationFile>True</GenerateDocumentationFile>
+	</PropertyGroup>
+	
+	<ItemGroup>
+	  <None Include="..\LICENSE">
+	    <Pack>True</Pack>
+	    <PackagePath>\</PackagePath>
+	  </None>
+	  <None Include="..\README.md">
+	    <Pack>True</Pack>
+	    <PackagePath>\</PackagePath>
+	  </None>
+	</ItemGroup>
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
-  </ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
+	</ItemGroup>
 
 </Project>

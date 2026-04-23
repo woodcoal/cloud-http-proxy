@@ -51,13 +51,14 @@ public class ProxyConfig {
      * 属性名称：FilteredHeaderPrefixes
      * 功能描述：需要过滤掉的请求头前缀列表（例如 Cloudflare 的 cf- 前缀）
      */
-	public List<string> FilteredHeaderPrefixes { get; set; } = ["cf-"];
+	public List<string> FilteredHeaderPrefixes { get; set; } = [];
 
 	/**
      * 属性名称：FilteredSensitiveHeaders
      * 功能描述：需要过滤掉的敏感请求头列表
+     * "cookie", "authorization", "proxy-authorization", "proxy-authenticate", "sec-websocket-key", "sec-websocket-protocol"
      */
-	public List<string> FilteredSensitiveHeaders { get; set; } = ["cookie", "authorization", "proxy-authorization", "proxy-authenticate", "sec-websocket-key", "sec-websocket-protocol"];
+	public List<string> FilteredSensitiveHeaders { get; set; } = [];
 
 	/**
      * 属性名称：UrlAccessControl
@@ -85,9 +86,15 @@ public class ProxyConfig {
 
 	/**
      * 属性名称：HtmlPathRewriteScope
-     * 功能描述：指定哪些 HTML 标签的路径需要被重写（如 link, script, image 等）
+     * 功能描述：指定哪些 HTML 标签的路径需要被重写（如 link, script, image 等）。默认为空，不自动重写。
      */
-	public List<string> HtmlPathRewriteScope { get; set; } = ["link", "style", "script", "image", "media", "iframe", "form"];
+	public List<string> HtmlPathRewriteScope { get; set; } = [];
+
+	/**
+     * 属性名称：RewriteRedirects
+     * 功能描述：是否自动重写 3xx 重定向的 Location 头，使其继续通过代理访问。默认为 true。
+     */
+	public bool RewriteRedirects { get; set; } = true;
 
 	/**
      * 属性名称：DisableCache
