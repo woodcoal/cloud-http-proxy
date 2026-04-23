@@ -1,6 +1,4 @@
-using CloudHttpProxy;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
+﻿using CloudHttpProxy;
 
 var builder = WebApplication.CreateBuilder(args);
 

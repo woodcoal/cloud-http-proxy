@@ -68,9 +68,11 @@ const CONFIG = {
 	// direction: 作用方向 - 'request'（请求体）, 'response'（响应体）, 'both'（两者都）
 	// jsonMode: JSON 替换模式 - 'whole'（整体替换，默认）, 'keyValue'（key-value 单独替换，仅对 JSON 有效）
 	// flags: 正则标志（可选）- 'g'（全局）, 'i'（不区分大小写）, 'gi'（全局+不区分大小写）
+	// host: 指定域名（可选）- 如果设置了，则仅当目标域名（或实际请求域名）匹配时才生效
 	replaceRules: [
 		// 示例：
 		// { type: 'regex', pattern: '旧内容', replacement: '新内容', direction: 'both' },
+		// { type: 'replace', pattern: '旧字符串', replacement: '新字符串', direction: 'response', host: 'example.com' },
 		// { type: 'replace', pattern: '旧字符串', replacement: '新字符串', direction: 'response' },
 		// { type: 'replace', pattern: 'abc', replacement: 'xyz', direction: 'request', flags: 'gi' }, // 不区分大小写替换
 		// { type: 'replace', pattern: 'oldKey', replacement: 'newKey', direction: 'request', jsonMode: 'keyValue' }, // 替换 JSON 的 key
@@ -191,7 +193,7 @@ async function handleRequest(request) {
 		// 替换请求体内容
 		let finalRequest = modifiedRequest;
 		if (request.body && hasReplaceRule('request')) {
-			finalRequest = await replaceRequestBody(modifiedRequest);
+			finalRequest = await replaceRequestBody(modifiedRequest, actualUrlStr);
 		}
 
 		// 发起对目标 URL 的请求（支持超时）
@@ -218,7 +220,7 @@ async function handleRequest(request) {
 
 		// 替换响应体内容
 		if (hasReplaceRule('response')) {
-			body = await replaceResponseBody(body, response);
+			body = await replaceResponseBody(body, response, actualUrlStr);
 		}
 
 		// 创建修改后的响应对象
@@ -615,28 +617,27 @@ function handleHtmlContent(text, protocol, host, actualUrlStr) {
 	const processUrl = (htmlText, attrName, tagPattern = null) => {
 		// 相对路径处理
 		const relativeRegex = tagPattern
-			? new RegExp(`<${tagPattern}[^>]*\\s+${attrName}=["\'](\\/[^"\']*)["']`, 'gi')
+			? new RegExp(`(<${tagPattern}[^>]*\\s+)${attrName}=["\'](\\/[^"\']*)["']`, 'gi')
 			: new RegExp(`(\\s+)${attrName}=["\'](\\/[^"\']*)["']`, 'g');
 
 		htmlText = htmlText.replace(relativeRegex, (match, spaceOrPrefix, path) => {
-			if (path.includes(host)) {
+			if (path && path.includes(host)) {
 				return match;
 			}
 			const encodedTarget = encodeURIComponent(targetOrigin);
-			const space = spaceOrPrefix || '';
-			return `${space}${attrName}="${protocolName}://${host}/${encodedTarget}${path}"`;
+			return `${spaceOrPrefix}${attrName}="${protocolName}://${host}/${encodedTarget}${path}"`;
 		});
 
 		// 绝对路径处理
 		const absoluteRegex = tagPattern
 			? new RegExp(
-					`<${tagPattern}[^>]*\\s+${attrName}=["\']((?:https?:)?\\/\\/[^"\']*)["\']`,
+					`(<${tagPattern}[^>]*\\s+)${attrName}=["\']((?:https?:)?\\/\\/[^"\']*)["\']`,
 					'gi'
 				)
 			: new RegExp(`(\\s+)${attrName}=["\']((?:https?:)?\\/\\/[^"\']*)["\']`, 'g');
 
 		htmlText = htmlText.replace(absoluteRegex, (match, spaceOrPrefix, url) => {
-			if (url.startsWith(`https://${host}/`) || url.startsWith(`http://${host}/`)) {
+			if (url && (url.startsWith(`https://${host}/`) || url.startsWith(`http://${host}/`))) {
 				return match;
 			}
 			let fullUrl = url;
@@ -644,8 +645,32 @@ function handleHtmlContent(text, protocol, host, actualUrlStr) {
 				fullUrl = 'https:' + url;
 			}
 			const encodedUrl = encodeURIComponent(fullUrl);
-			const space = spaceOrPrefix || '';
-			return `${space}${attrName}="${protocolName}://${host}/${encodedUrl}"`;
+			return `${spaceOrPrefix}${attrName}="${protocolName}://${host}/${encodedUrl}"`;
+		});
+
+		// 其他相对路径处理（不以 /、http://、https://、//、data:、javascript:、mailto:、# 开头）
+		const otherRegex = tagPattern
+			? new RegExp(
+					`(<${tagPattern}[^>]*\\s+)${attrName}=["\'](?!\\/|https?:\\/\\/|\\/\\/|data:|javascript:|mailto:|#)([^"\']+)["\']`,
+					'gi'
+				)
+			: new RegExp(
+					`(\\s+)${attrName}=["\'](?!\\/|https?:\\/\\/|\\/\\/|data:|javascript:|mailto:|#)([^"\']+)["\']`,
+					'g'
+				);
+
+		htmlText = htmlText.replace(otherRegex, (match, spaceOrPrefix, path) => {
+			if (path && path.includes(host)) {
+				return match;
+			}
+			let fullUrl;
+			if (actualUrlStr.endsWith('/')) {
+				fullUrl = actualUrlStr + path;
+			} else {
+				fullUrl = actualUrlStr + '/' + path;
+			}
+			const encodedUrl = encodeURIComponent(fullUrl);
+			return `${spaceOrPrefix}${attrName}="${protocolName}://${host}/${encodedUrl}"`;
 		});
 
 		return htmlText;
@@ -765,9 +790,10 @@ function isTextContentType(direction, object) {
 /**
  * 替换请求体内容
  * @param {Request} request - 原始请求对象
+ * @param {string} actualUrlStr - 当前实际请求的 URL
  * @returns {Promise<Request>} 替换后的请求对象
  */
-async function replaceRequestBody(request) {
+async function replaceRequestBody(request, actualUrlStr) {
 	try {
 		// 检查是否为文本类型
 		if (!isTextContentType('request', request)) {
@@ -775,7 +801,7 @@ async function replaceRequestBody(request) {
 		}
 
 		const text = await request.text();
-		const modifiedText = applyReplaceRules(text, 'request');
+		const modifiedText = applyReplaceRules(text, 'request', actualUrlStr);
 
 		// 如果是 JSON，验证替换后是否仍为有效 JSON
 		const contentType = request.headers.get('Content-Type') || '';
@@ -804,9 +830,10 @@ async function replaceRequestBody(request) {
  * 替换响应体内容
  * @param {ReadableStream} body - 响应体流
  * @param {Response} response - 原始响应对象
+ * @param {string} actualUrlStr - 当前实际请求的 URL
  * @returns {Promise<ReadableStream>} 替换后的响应体流
  */
-async function replaceResponseBody(body, response) {
+async function replaceResponseBody(body, response, actualUrlStr) {
 	try {
 		// 检查是否为文本类型
 		if (!isTextContentType('response', response)) {
@@ -814,7 +841,7 @@ async function replaceResponseBody(body, response) {
 		}
 
 		const text = await new Response(body).text();
-		const modifiedText = applyReplaceRules(text, 'response');
+		const modifiedText = applyReplaceRules(text, 'response', actualUrlStr);
 
 		// 如果是 JSON，验证替换后是否仍为有效 JSON
 		const contentType = response.headers.get('Content-Type') || '';
@@ -839,18 +866,45 @@ async function replaceResponseBody(body, response) {
  * 应用替换规则
  * @param {string} text - 原始文本
  * @param {string} direction - 方向：'request' 或 'response'
+ * @param {string} actualUrlStr - 当前实际请求的 URL
  * @returns {string} 替换后的文本
  */
-function applyReplaceRules(text, direction) {
+function applyReplaceRules(text, direction, actualUrlStr) {
+	let urlHost = '';
+	try {
+		if (actualUrlStr) {
+			urlHost = new URL(actualUrlStr).host;
+		}
+	} catch (e) {
+		// 解析失败，忽略
+	}
+
 	const rules = CONFIG.replaceRules.filter(
 		(rule) => rule.direction === direction || rule.direction === 'both'
 	);
 
 	for (const rule of rules) {
-		const { type, pattern, replacement, jsonMode, flags } = rule;
+		const { type, pattern, replacement, jsonMode, flags, host } = rule;
 
 		if (!pattern || replacement === undefined) {
 			continue;
+		}
+
+		// 如果规则配置了 host 且不匹配当前请求的目标 host，则跳过
+		if (host && urlHost) {
+			let isMatch = false;
+			if (host.includes('*')) {
+				const regexPattern = host.replace(/\./g, '\\.').replace(/\*/g, '.*');
+				const regex = new RegExp(`^${regexPattern}$`, 'i');
+				isMatch = regex.test(urlHost);
+			} else {
+				// 支持模糊匹配（包含该字符串）
+				isMatch = urlHost.toLowerCase().includes(host.toLowerCase());
+			}
+
+			if (!isMatch) {
+				continue;
+			}
 		}
 
 		// 如果是 JSON 模式且 jsonMode 为 keyValue

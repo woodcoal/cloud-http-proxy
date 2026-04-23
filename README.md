@@ -361,7 +361,8 @@ const CONFIG = {
     		type: 'replace',
     		pattern: '旧内容',
     		replacement: '新内容',
-    		direction: 'both'
+    		direction: 'both',
+    		host: 'example.com' // 选填：仅当目标域名匹配时才生效
     	},
     	// 正则替换
     	{
@@ -388,7 +389,8 @@ const CONFIG = {
         "Type": "replace",
         "Pattern": "旧内容",
         "Replacement": "新内容",
-        "Direction": "both"
+        "Direction": "both",
+        "Host": "example.com"
       },
       {
         "Type": "regex",
@@ -405,6 +407,24 @@ const CONFIG = {
       }
     ]
     ```
+
+**参数说明：**
+
+- `type` (`Type`): 替换方式
+  - `replace`：简单替换，替换所有匹配的字符串
+  - `exact`：精确匹配，与 replace 效果相同
+  - `regex`：正则表达式替换
+- `pattern` (`Pattern`): 需要匹配的字符串或正则表达式
+- `replacement` (`Replacement`): 替换后的新内容
+- `direction` (`Direction`): 作用方向
+  - `request`：仅替换请求体（如 POST 提交的数据）
+  - `response`：仅替换响应体（如返回的 HTML 或 JSON）
+  - `both`：双向生效
+- `jsonMode` (`JsonMode`): JSON 处理模式（默认 `whole`）
+  - `whole`：将 JSON 作为普通字符串整体匹配
+  - `keyValue`：仅当内容是有效 JSON 时，递归遍历 JSON，对所有键名和文本值进行独立替换
+- `flags` (`Flags`): (可选) 正则标志。例如 `"gi"` (全局且忽略大小写)。`replace` 模式下仅支持 `i` 忽略大小写。
+- `host` (`Host`): (可选) 指定生效的域名。如果配置了此项，则仅当目标网站的域名与此匹配时该条替换规则才会生效。
 
 **替换类型说明：**
 
