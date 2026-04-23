@@ -1,4 +1,4 @@
-using CloudHttpProxy;
+﻿using CloudHttpProxy;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,7 +27,7 @@ app.UseMiddleware<ProxyMiddleware>();
 // 获取配置判断是否需要输出启动日志
 var config = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<ProxyConfig>>().Value;
 if (!string.Equals(config.LogLevel, "none", StringComparison.OrdinalIgnoreCase)) {
-    Console.WriteLine($"[系统] 代理服务已启动: http://{bindIp}:{bindPort}");
+	Console.WriteLine($"\u001b[36m代理服务已启动: http://{bindIp}:{bindPort} ({DateTime.Now:MM/dd HH:mm:ss})");
 }
 
 // 启动 Web 服务

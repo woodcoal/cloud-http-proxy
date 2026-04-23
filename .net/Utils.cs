@@ -273,7 +273,8 @@ public static class HtmlRewriter {
 		}, RegexOptions.IgnoreCase);
 
 		return htmlText;
-	}}
+	}
+}
 
 /**
  * 类名称：ContentReplacer
@@ -317,7 +318,7 @@ public static class ContentReplacer {
 
 			// 如果规则配置了 Host 且不匹配当前请求的目标 Host，则跳过
 			if (!string.IsNullOrEmpty(rule.Host) && !string.IsNullOrEmpty(urlHost)) {
-				bool isMatch = false;
+				var isMatch = false;
 				if (rule.Host.Contains('*')) {
 					var regexPattern = "^" + Regex.Escape(rule.Host).Replace("\\*", ".*") + "$";
 					isMatch = Regex.IsMatch(urlHost, regexPattern, RegexOptions.IgnoreCase);
