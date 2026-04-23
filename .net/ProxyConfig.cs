@@ -9,6 +9,18 @@ namespace CloudHttpProxy;
 public class ProxyConfig
 {
     /**
+     * 属性名称：BindIp
+     * 功能描述：服务器绑定的 IP 地址。默认为 0.0.0.0（允许所有连接）
+     */
+    public string BindIp { get; set; } = "0.0.0.0";
+
+    /**
+     * 属性名称：BindPort
+     * 功能描述：服务器绑定的端口。默认为 5000
+     */
+    public int BindPort { get; set; } = 5000;
+
+    /**
      * 属性名称：Timeout
      * 功能描述：请求超时时间（毫秒）。默认值为 0（代表使用默认超时，例如 100秒）
      */
