@@ -2,5 +2,6 @@
 <Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <ActiveDebugProfile>https</ActiveDebugProfile>
+    <NameOfLastUsedPublishProfile>D:\Design\2025\MuTan\cloud-http-proxy\.net\Properties\PublishProfiles\Linux.pubxml</NameOfLastUsedPublishProfile>
   </PropertyGroup>
 </Project>
