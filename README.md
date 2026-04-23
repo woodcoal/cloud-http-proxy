@@ -1,6 +1,6 @@
 # Cloudflare Worker 代理服务
 
-一个功能强大的 Cloudflare Worker 代理服务，支持代理任意 URL、HTML 内容路径处理、请求/响应内容替换、黑白名单控制等功能。
+一个功能强大的代理服务，提供 Cloudflare Worker 和 .NET 两种实现方式，支持代理任意 URL、HTML 内容路径处理、请求/响应内容替换、黑白名单控制等功能。
 
 > **⚠️ 免责声明**：本项目仅供学习和技术研究使用，请勿用于任何违法、违规或破坏性用途。使用本项目时，请确保遵守当地法律法规以及目标网站的服务条款。因滥用本项目导致的任何法律责任，由使用者自行承担。
 
@@ -18,7 +18,14 @@
 ## 项目结构
 
 ```
-├── worker.js   # 主代理逻辑（包含配置）
+├── worker.js   # Cloudflare Worker 主代理逻辑（包含配置）
+├── .net/       # .NET 实现版本
+│   ├── CloudHttpProxy.csproj     # .NET 项目文件
+│   ├── Program.cs                # 应用入口
+│   ├── ProxyConfig.cs            # 配置类
+│   ├── ProxyMiddleware.cs        # 核心代理中间件
+│   ├── Utils.cs                  # 工具类
+│   └── appsettings.json          # 配置文件
 └── README.md   # 说明文档
 ```
 
@@ -131,178 +138,273 @@ const CONFIG = {
 
 ### 配置详解
 
-#### 请求超时 (timeout)
+#### 请求超时 (timeout / Timeout)
 
-```javascript
-timeout: 30000; // 30秒超时
-timeout: 0; // 不限制超时
+- **Cloudflare Worker 版本：**
+
+    ```javascript
+    timeout: 30000; // 30秒超时
+    timeout: 0; // 不限制超时
+    ```
+
+- **.NET 版本：**
+    ```json
+    "Timeout": 30000, // 30秒超时
+    "Timeout": 0 // 不限制超时
+    ```
+
+#### 请求体大小限制 (maxRequestBodySize / MaxRequestBodySize)
+
+- **Cloudflare Worker 版本：**
+
+    ```javascript
+    maxRequestBodySize: 10 * 1024 * 1024; // 10MB
+    maxRequestBodySize: 5 * 1024 * 1024; // 5MB
+    maxRequestBodySize: 0; // 不限制
+    ```
+
+- **.NET 版本：**
+    ```json
+    "MaxRequestBodySize": 10485760, // 10MB
+    "MaxRequestBodySize": 5242880, // 5MB
+    "MaxRequestBodySize": 0 // 不限制
+    ```
+
+#### 绑定地址和端口（仅 .NET 版本）
+
+```json
+"BindIp": "0.0.0.0", // 绑定所有网络接口
+"BindPort": 5000 // 绑定端口
 ```
 
-#### 请求体大小限制 (maxRequestBodySize)
+#### 代理访问密钥 (proxyToken / ProxyToken)
 
-```javascript
-maxRequestBodySize: 10 * 1024 * 1024; // 10MB
-maxRequestBodySize: 5 * 1024 * 1024; // 5MB
-maxRequestBodySize: 0; // 不限制
-```
+- **Cloudflare Worker 版本：**
 
-#### 代理访问密钥 (proxyToken)
+    ```javascript
+    proxyToken: 'your-secret-token'; // 设置密钥
+    proxyToken: ''; // 不验证（默认）
+    ```
 
-```javascript
-proxyToken: 'your-secret-token'; // 设置密钥
-proxyToken: ''; // 不验证（默认）
-```
+- **.NET 版本：**
+    ```json
+    "ProxyToken": "your-secret-token", // 设置密钥
+    "ProxyToken": "" // 不验证（默认）
+    ```
 
 请求时需要在 Header 中添加 `x-proxy-key: your-secret-token`
 
-#### IP 白名单 (ipWhitelist)
+#### IP 白名单 (ipWhitelist / IpWhitelist)
 
-```javascript
-// 多个 IP
-ipWhitelist: ['192.168.1.1', '10.0.0.1'];
+- **Cloudflare Worker 版本：**
 
-// 通配符匹配
-ipWhitelist: ['192.168.1.*', '10.0.*.*'];
+    ```javascript
+    // 多个 IP
+    ipWhitelist: ['192.168.1.1', '10.0.0.1'];
 
-// CIDR 格式
-ipWhitelist: ['192.168.0.0/16', '10.0.0.0/8'];
+    // 通配符匹配
+    ipWhitelist: ['192.168.1.*', '10.0.*.*'];
 
-// 禁用
-ipWhitelist: [];
-```
+    // CIDR 格式
+    ipWhitelist: ['192.168.0.0/16', '10.0.0.0/8'];
 
-#### 请求方法白名单 (allowedMethods)
+    // 禁用
+    ipWhitelist: [];
+    ```
 
-```javascript
-allowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS', 'PATCH']; // 允许的方法
-allowedMethods: ['GET', 'POST']; // 只允许 GET 和 POST
-allowedMethods: []; // 不限制
-```
+- **.NET 版本：**
+    ```json
+    "IpWhitelist": ["192.168.1.1", "10.0.0.1"], // 多个 IP
+    "IpWhitelist": ["192.168.1.*", "10.0.*.*"], // 通配符匹配
+    "IpWhitelist": ["192.168.0.0/16", "10.0.0.0/8"], // CIDR 格式
+    "IpWhitelist": [] // 禁用
+    ```
 
-#### 请求头过滤 (filteredHeaderPrefixes)
+#### 请求方法白名单 (allowedMethods / AllowedMethods)
 
-```javascript
-filteredHeaderPrefixes: ['cf-']; // 过滤 cf- 开头的请求头（默认）
-filteredHeaderPrefixes: ['x-', 'cf-']; // 过滤 x- 和 cf- 开头
-filteredHeaderPrefixes: []; // 不过滤
-```
+- **Cloudflare Worker 版本：**
 
-#### 敏感请求头过滤 (filteredSensitiveHeaders)
+    ```javascript
+    allowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS', 'PATCH']; // 允许的方法
+    allowedMethods: ['GET', 'POST']; // 只允许 GET 和 POST
+    allowedMethods: []; // 不限制
+    ```
 
-```javascript
-// 默认过滤所有敏感请求头（安全）
-filteredSensitiveHeaders: [
-	'cookie', // Cookie 凭证
-	'authorization', // 认证信息（如 Token、Bearer Token）
-	'proxy-authorization', // 代理认证信息
-	'proxy-authenticate', // 代理认证响应
-	'sec-websocket-key', // WebSocket 密钥
-	'sec-websocket-protocol' // WebSocket 协议
-];
+- **.NET 版本：**
+    ```json
+    "AllowedMethods": ["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS", "PATCH"], // 允许的方法
+    "AllowedMethods": ["GET", "POST"], // 只允许 GET 和 POST
+    "AllowedMethods": [] // 不限制
+    ```
 
-// 不过滤任何敏感请求头
-filteredSensitiveHeaders: [];
-```
+#### 请求头过滤 (filteredHeaderPrefixes / FilteredHeaderPrefixes)
+
+- **Cloudflare Worker 版本：**
+
+    ```javascript
+    filteredHeaderPrefixes: ['cf-']; // 过滤 cf- 开头的请求头（默认）
+    filteredHeaderPrefixes: ['x-', 'cf-']; // 过滤 x- 和 cf- 开头
+    filteredHeaderPrefixes: []; // 不过滤
+    ```
+
+- **.NET 版本：**
+    ```json
+    "FilteredHeaderPrefixes": ["cf-"], // 过滤 cf- 开头的请求头（默认）
+    "FilteredHeaderPrefixes": ["x-", "cf-"], // 过滤 x- 和 cf- 开头
+    "FilteredHeaderPrefixes": [] // 不过滤
+    ```
+
+#### 敏感请求头过滤 (filteredSensitiveHeaders / FilteredSensitiveHeaders)
+
+- **Cloudflare Worker 版本：**
+
+    ```javascript
+    // 默认过滤所有敏感请求头（安全）
+    filteredSensitiveHeaders: [
+    	'cookie', // Cookie 凭证
+    	'authorization', // 认证信息（如 Token、Bearer Token）
+    	'proxy-authorization', // 代理认证信息
+    	'proxy-authenticate', // 代理认证响应
+    	'sec-websocket-key', // WebSocket 密钥
+    	'sec-websocket-protocol' // WebSocket 协议
+    ];
+
+    // 不过滤任何敏感请求头
+    filteredSensitiveHeaders: [];
+    ```
+
+- **.NET 版本：**
+    ```json
+    "FilteredSensitiveHeaders": ["cookie", "authorization", "proxy-authorization", "proxy-authenticate", "sec-websocket-key", "sec-websocket-protocol"], // 默认过滤所有敏感请求头
+    "FilteredSensitiveHeaders": [] // 不过滤任何敏感请求头
+    ```
 
 **注意：** 生产环境建议保持默认配置，过滤敏感请求头以防止凭证泄露。
 
-#### 访问控制 (urlAccessControl)
+#### 访问控制 (urlAccessControl / UrlAccessControl)
 
-```javascript
-// 白名单模式：只有列表中的地址可以访问
-urlAccessControl: {
-    mode: 'whitelist',
-    urls: [
-        'example.com',              // 域名匹配
-        '*.google.com',             // 通配符匹配所有子域名
-        'https://api.test.com',     // 完整 URL
-        'https://api.test.com/v1'   // 带路径匹配
+- **Cloudflare Worker 版本：**
+
+    ```javascript
+    // 白名单模式：只有列表中的地址可以访问
+    urlAccessControl: {
+        mode: 'whitelist',
+        urls: [
+            'example.com',              // 域名匹配
+            '*.google.com',             // 通配符匹配所有子域名
+            'https://api.test.com',     // 完整 URL
+            'https://api.test.com/v1'   // 带路径匹配
+        ]
+    }
+
+    // 黑名单模式：列表中的地址禁止访问
+    urlAccessControl: {
+        mode: 'blacklist',
+        urls: [
+            'malicious.com',
+            '*.ads.com'
+        ]
+    }
+
+    // 不限制
+    urlAccessControl: {
+        mode: 'none',
+        urls: []
+    }
+    ```
+
+- **.NET 版本：**
+    ```json
+    "UrlAccessControl": {
+      "Mode": "whitelist",
+      "Urls": ["example.com", "*.google.com", "https://api.test.com"]
+    },
+    "UrlAccessControl": {
+      "Mode": "blacklist",
+      "Urls": ["malicious.com", "*.ads.com"]
+    },
+    "UrlAccessControl": {
+      "Mode": "none",
+      "Urls": []
+    }
+    ```
+
+#### 快捷地址映射 (urlShortcuts / UrlShortcuts)
+
+- **Cloudflare Worker 版本：**
+
+    ```javascript
+    urlShortcuts: {
+        'gh': 'https://github.com',
+        'npm': 'https://www.npmjs.com'
+    };
+    ```
+
+- **.NET 版本：**
+    ```json
+    "UrlShortcuts": {
+      "gh": "https://github.com",
+      "npm": "https://www.npmjs.com"
+    }
+    ```
+
+使用方式：`http://localhost:5000/gh` 会被代理到 `https://github.com`
+
+#### 内容替换规则 (replaceRules / ReplaceRules)
+
+- **Cloudflare Worker 版本：**
+
+    ```javascript
+    replaceRules: [
+    	// 简单替换
+    	{
+    		type: 'replace',
+    		pattern: '旧内容',
+    		replacement: '新内容',
+    		direction: 'both'
+    	},
+    	// 正则替换
+    	{
+    		type: 'regex',
+    		pattern: '正则表达式',
+    		replacement: '替换内容',
+    		direction: 'response'
+    	},
+    	// JSON key-value 替换
+    	{
+    		type: 'replace',
+    		pattern: 'oldKey',
+    		replacement: 'newKey',
+    		direction: 'request',
+    		jsonMode: 'keyValue'
+    	}
+    ];
+    ```
+
+- **.NET 版本：**
+    ```json
+    "ReplaceRules": [
+      {
+        "Type": "replace",
+        "Pattern": "旧内容",
+        "Replacement": "新内容",
+        "Direction": "both"
+      },
+      {
+        "Type": "regex",
+        "Pattern": "正则表达式",
+        "Replacement": "替换内容",
+        "Direction": "response"
+      },
+      {
+        "Type": "replace",
+        "Pattern": "oldKey",
+        "Replacement": "newKey",
+        "Direction": "request",
+        "JsonMode": "keyValue"
+      }
     ]
-}
-
-// 黑名单模式：列表中的地址禁止访问
-urlAccessControl: {
-    mode: 'blacklist',
-    urls: [
-        'malicious.com',
-        '*.ads.com'
-    ]
-}
-
-// 不限制
-urlAccessControl: {
-    mode: 'none',
-    urls: []
-}
-```
-
-#### 内容替换规则 (replaceRules)
-
-```javascript
-replaceRules: [
-	// ========== 基础替换 ==========
-
-	// 简单替换（默认）- 替换所有匹配的字符串
-	{
-		type: 'replace', // 替换方式：'replace'（默认）, 'regex'（正则）, 'exact'（精确）
-		pattern: '旧内容', // 要替换的内容
-		replacement: '新内容', // 替换后的内容
-		direction: 'both' // 作用方向：'request'（请求体）, 'response'（响应体）, 'both'（两者）
-	},
-
-	// 精确匹配
-	{
-		type: 'exact',
-		pattern: '完整匹配内容',
-		replacement: '替换内容',
-		direction: 'request'
-	},
-
-	// 正则替换
-	{
-		type: 'regex',
-		pattern: '正则表达式',
-		replacement: '替换内容',
-		direction: 'response'
-	},
-
-	// ========== JSON 替换 ==========
-
-	// 整体替换（默认）- 替换整个 JSON 字符串中的内容
-	{
-		type: 'replace',
-		pattern: 'oldValue',
-		replacement: 'newValue',
-		direction: 'request',
-		jsonMode: 'whole' // 整体替换（默认）
-	},
-
-	// key-value 单独替换 - 递归替换 JSON 的 key 和 string 类型的 value
-	{
-		type: 'replace',
-		pattern: 'oldKey',
-		replacement: 'newKey',
-		direction: 'request',
-		jsonMode: 'keyValue' // key-value 模式
-	},
-	{
-		type: 'replace',
-		pattern: 'oldValue',
-		replacement: 'newValue',
-		direction: 'response',
-		jsonMode: 'keyValue'
-	},
-
-	// 正则 + keyValue 模式
-	{
-		type: 'regex',
-		pattern: '^old',
-		replacement: 'new',
-		direction: 'both',
-		jsonMode: 'keyValue'
-	}
-];
-```
+    ```
 
 **替换类型说明：**
 
@@ -321,95 +423,71 @@ replaceRules: [
 - `whole`（默认）：整体替换，将 JSON 当作普通文本处理
 - `keyValue`：递归遍历 JSON 对象，替换所有的 key 和 string 类型的 value
 
-**flags 参数（可选）：**
+#### 首页配置 (homePage / HomePage)
 
-- `g`：全局替换
-- `i`：不区分大小写
-- `gi`：全局 + 不区分大小写
+- **Cloudflare Worker 版本：**
 
-**示例：**
+    ```javascript
+    // 返回自定义内容
+    homePage: {
+        statusCode: 200,
+        content: 'Proxy Service Running'
+    }
 
-```javascript
-// 替换响应中的资源路径
-replaceRules: [
-	{ type: 'replace', pattern: '/static/', replacement: '/proxy/static/', direction: 'response' }
-];
+    // 返回 404
+    homePage: {
+        statusCode: 404,
+        content: 'Not Found'
+    }
 
-// 移除响应中的广告脚本
-replaceRules: [
-	{ type: 'regex', pattern: '<script>.*?ads.*?</script>', replacement: '', direction: 'response' }
-];
+    // 返回空响应
+    homePage: {
+        statusCode: null,
+        content: ''
+    }
+    ```
 
-// 不区分大小写替换
-replaceRules: [
-	{ type: 'replace', pattern: 'abc def', replacement: 'xyz', direction: 'request', flags: 'gi' }
-];
+- **.NET 版本：**
+    ```json
+    "HomePage": {
+      "StatusCode": 200,
+      "Content": "Proxy Service Running"
+    },
+    "HomePage": {
+      "StatusCode": 404,
+      "Content": "Not Found"
+    },
+    "HomePage": {
+      "StatusCode": null,
+      "Content": ""
+    }
+    ```
 
-// 替换 JSON 请求中的字段名
-replaceRules: [
-	{
-		type: 'replace',
-		pattern: 'old_field_name',
-		replacement: 'new_field_name',
-		direction: 'request',
-		jsonMode: 'keyValue'
-	}
-];
+#### HTML 路径重写 (htmlPathRewriteScope / HtmlPathRewriteScope)
 
-// 替换 JSON 响应中的值
-replaceRules: [
-	{
-		type: 'replace',
-		pattern: 'demo_key',
-		replacement: 'production_key',
-		direction: 'response',
-		jsonMode: 'keyValue'
-	}
-];
-```
+- **Cloudflare Worker 版本：**
 
-#### 首页配置 (homePage)
+    ```javascript
+    // 数组形式，可自由组合
+    htmlPathRewriteScope: ['link', 'style', 'script', 'image', 'media', 'iframe', 'form'],  // 处理所有类型（默认）
 
-```javascript
-// 返回自定义内容
-homePage: {
-    statusCode: 200,
-    content: 'Proxy Service Running'
-}
+    // 使用 all 关键字
+    htmlPathRewriteScope: 'all'    // 所有类型
 
-// 返回 404
-homePage: {
-    statusCode: 404,
-    content: 'Not Found'
-}
+    // 禁用
+    htmlPathRewriteScope: false
+    htmlPathRewriteScope: []
+    ```
 
-// 返回空响应
-homePage: {
-    statusCode: null,
-    content: ''
-}
-```
-
-#### HTML 路径重写 (htmlPathRewriteScope)
-
-```javascript
-// 数组形式，可自由组合
-htmlPathRewriteScope: ['link', 'style', 'script', 'image', 'media', 'iframe', 'form'],  // 处理所有类型（默认）
-
-// 使用 all 关键字
-htmlPathRewriteScope: 'all'    // 所有类型
-
-// 常用组合示例
-htmlPathRewriteScope: ['link', 'form'],           // 仅链接和表单
-htmlPathRewriteScope: ['style', 'script', 'image', 'media'], // 样式、脚本、图片、视频/音频
-htmlPathRewriteScope: ['link'],                   // 仅链接
-
-// 禁用
-htmlPathRewriteScope: false
-htmlPathRewriteScope: []
-```
+- **.NET 版本：**
+    ```json
+    "HtmlPathRewriteScope": ["link", "style", "script", "image", "media", "iframe", "form"], // 处理所有类型（默认）
+    "HtmlPathRewriteScope": ["all"], // 所有类型
+    "HtmlPathRewriteScope": [] // 禁用
+    ```
 
 **可选值：**
+
 - `link`: a 标签的 href
 - `style`: link 标签的 href（样式文件）
 - `script`: script 标签的 src
@@ -420,14 +498,23 @@ htmlPathRewriteScope: []
 - `all`: 所有类型
 
 当启用时，会将 HTML 中的相对路径转换为代理服务器的绝对路径：
-- `/css/style.css` → `https://proxy.com/https%3A%2F%2Fexample.com/css/style.css`
 
-#### 缓存配置 (disableCache)
+- `/css/style.css` → `http://localhost:5000/https%3A%2F%2Fexample.com/css/style.css`
 
-```javascript
-disableCache: true; // 禁用缓存，每次请求都从源站获取（默认）
-disableCache: false; // 允许缓存，由源站响应头控制
-```
+#### 缓存配置 (disableCache / DisableCache)
+
+- **Cloudflare Worker 版本：**
+
+    ```javascript
+    disableCache: true; // 禁用缓存，每次请求都从源站获取（默认）
+    disableCache: false; // 允许缓存，由源站响应头控制
+    ```
+
+- **.NET 版本：**
+    ```json
+    "DisableCache": true, // 禁用缓存，每次请求都从源站获取（默认）
+    "DisableCache": false // 允许缓存，由源站响应头控制
+    ```
 
 ## 完整配置示例
 
@@ -523,3 +610,8 @@ Cloudflare Workers 有内置的日志功能，在 Cloudflare Dashboard 的 Worke
 ## 许可证
 
 MIT License
+
+## 版权信息
+
+- **作者**：木炭
+- **项目地址**：[https://github.com/woodcoal/cloud-http-proxy](https://github.com/woodcoal/cloud-http-proxy)
