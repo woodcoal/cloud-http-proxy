@@ -80,10 +80,32 @@ public class ProxyMiddleware {
 
 		// 5. 首页处理逻辑
 		if (context.Request.Path == "/") {
-			if (config.HomePage?.StatusCode != null) {
-				context.Response.StatusCode = config.HomePage.StatusCode.Value;
-				context.Response.ContentType = "text/html; charset=utf-8";
-				await context.Response.WriteAsync(config.HomePage.Content ?? "");
+			var statusCode = config.HomePage.StatusCode ?? 404;
+			context.Response.StatusCode = statusCode;
+			context.Response.ContentType = "text/html; charset=utf-8";
+
+			var homePageContent = config.HomePage.Content ?? "";
+			if (string.IsNullOrEmpty(homePageContent) && statusCode == 200) {
+				homePageContent = GetHomePageHtml();
+			}
+
+			await context.Response.WriteAsync(homePageContent);
+			return;
+		}
+
+		// 处理通过首页表单提交的代理请求
+		if (context.Request.Path == "/proxy" && context.Request.Method == "POST") {
+			var form = await context.Request.ReadFormAsync();
+			var targetUrl = form["url"].ToString()?.Trim() ?? "";
+			if (!string.IsNullOrEmpty(targetUrl)) {
+				// 确保 URL 有协议头
+				if (!targetUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+					!targetUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) {
+					targetUrl = "https://" + targetUrl;
+				}
+				context.Response.Redirect("/" + Uri.EscapeDataString(targetUrl));
+			} else {
+				await JsonErrorAsync(context, "请输入有效的目标地址", 400);
 			}
 			return;
 		}
@@ -423,4 +445,300 @@ public class ProxyMiddleware {
 			return true;
 		}
 	}
+
+	/**
+	 * 函数名称：GetHomePageHtml
+	 * 功能描述：获取首页 HTML 内容，包含地址输入框和历史记录功能
+	 */
+	private static string GetHomePageHtml() => @"<!DOCTYPE html>
+<html lang=""zh-CN"">
+<head>
+    <meta charset=""UTF-8"">
+    <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+    <title>HTTP 代理服务</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, ""Helvetica Neue"", Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 50px 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        h1 {
+            color: #1a1a2e;
+            font-size: 28px;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 30px;
+        }
+        .input-group {
+            position: relative;
+            margin-bottom: 20px;
+        }
+        input[type=""url""] {
+            width: 100%;
+            padding: 15px 20px;
+            font-size: 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+        input[type=""url""]:focus {
+            border-color: #0f3460;
+            box-shadow: 0 0 0 3px rgba(15, 52, 96, 0.1);
+        }
+        button {
+            width: 100%;
+            padding: 15px 30px;
+            font-size: 16px;
+            font-weight: 600;
+            color: white;
+            background: linear-gradient(135deg, #0f3460 0%, #16213e 100%);
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(15, 52, 96, 0.3);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .history {
+            margin-top: 30px;
+            text-align: left;
+        }
+        .history-title {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .history-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+        .history-item:hover {
+            background: #e9ecef;
+            border-color: #0f3460;
+        }
+        .history-url {
+            font-size: 14px;
+            color: #333;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+        .history-delete {
+            width: 24px;
+            height: 24px;
+            min-width: 24px;
+            min-height: 24px;
+            border-radius: 50%;
+            border: none;
+            background: #dc3545;
+            color: white;
+            font-size: 14px;
+            line-height: 1;
+            cursor: pointer;
+            opacity: 0;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            margin-left: 10px;
+            flex-shrink: 0;
+        }
+        .history-item:hover .history-delete {
+            opacity: 1;
+        }
+        .history-delete:hover {
+            background: #c82333;
+            transform: scale(1.1);
+        }
+        .clear-all {
+            font-size: 12px;
+            color: #dc3545;
+            cursor: pointer;
+            background: none;
+            border: none;
+            width: auto;
+            padding: 4px 8px;
+        }
+        .clear-all:hover {
+            text-decoration: underline;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 30px;
+            color: #999;
+            font-size: 14px;
+        }
+        .tips {
+            margin-top: 25px;
+            padding: 15px;
+            background: #e8f4fd;
+            border-radius: 10px;
+            font-size: 13px;
+            color: #0f3460;
+            line-height: 1.6;
+        }
+        .tips strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class=""container"">
+        <h1>HTTP 代理服务</h1>
+        <p class=""subtitle"">输入目标地址开始代理访问</p>
+
+        <form id=""proxyForm"" action=""/proxy"" method=""POST"">
+            <div class=""input-group"">
+                <input type=""url"" id=""urlInput"" name=""url"" placeholder=""https://example.com"" required>
+            </div>
+            <button type=""submit"">开始代理访问</button>
+        </form>
+
+        <div class=""history"" id=""historySection"" style=""display: none;"">
+            <div class=""history-title"">
+                <span>历史记录</span>
+                <button type=""button"" class=""clear-all"" onclick=""clearAllHistory()"">清空全部</button>
+            </div>
+            <div class=""history-list"" id=""historyList""></div>
+        </div>
+
+        <div class=""tips"">
+            <strong>使用提示</strong>
+            输入完整 URL（如 https://example.com）或简写（如 example.com），系统会自动补全协议头。历史记录保存在浏览器本地。
+        </div>
+    </div>
+
+    <script>
+        const STORAGE_KEY = 'proxy_history';
+        const MAX_HISTORY = 10;
+
+        function getHistory() {
+            try {
+                const data = localStorage.getItem(STORAGE_KEY);
+                return data ? JSON.parse(data) : [];
+            } catch {
+                return [];
+            }
+        }
+
+        function saveHistory(history) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(history.slice(0, MAX_HISTORY)));
+        }
+
+        function addHistory(url) {
+            let history = getHistory();
+            history = history.filter(item => item !== url);
+            history.unshift(url);
+            saveHistory(history);
+        }
+
+        function deleteHistory(url, event) {
+            event.stopPropagation();
+            let history = getHistory().filter(item => item !== url);
+            saveHistory(history);
+            renderHistory();
+        }
+
+        function clearAllHistory() {
+            if (confirm('确定要清空所有历史记录吗？')) {
+                localStorage.removeItem(STORAGE_KEY);
+                renderHistory();
+            }
+        }
+
+        function renderHistory() {
+            const history = getHistory();
+            const section = document.getElementById('historySection');
+            const list = document.getElementById('historyList');
+
+            if (history.length === 0) {
+                section.style.display = 'none';
+                return;
+            }
+
+            section.style.display = 'block';
+            list.innerHTML = history.map(url => `
+                <div class=""history-item"" onclick=""useHistory('${url.replace(/'/g, ""\\'"")}')"">
+                    <span class=""history-url"">${escapeHtml(url)}</span>
+                    <button type=""button"" class=""history-delete"" onclick=""deleteHistory('${url.replace(/'/g, ""\\'"")}', event)"">×</button>
+                </div>
+            `).join('');
+        }
+
+        function useHistory(url) {
+            addHistory(url);
+            let targetUrl = url;
+            if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+                targetUrl = 'https://' + targetUrl;
+            }
+            window.open('/' + encodeURIComponent(targetUrl), '_blank');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        document.getElementById('proxyForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const url = document.getElementById('urlInput').value.trim();
+            if (url) {
+                addHistory(url);
+                // 在新窗口打开代理地址
+                let targetUrl = url;
+                if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+                    targetUrl = 'https://' + targetUrl;
+                }
+                window.open('/' + encodeURIComponent(targetUrl), '_blank');
+            }
+        });
+
+        renderHistory();
+        document.getElementById('urlInput').focus();
+    </script>
+</body>
+</html>";
 }
