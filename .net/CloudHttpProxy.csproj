@@ -5,7 +5,7 @@
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<PublishAot>False</PublishAot>
-		<Title>Http 代理</Title>
+		<Title>Http 反向代理</Title>
 		<Product>MuTan.CloudHttpProxy</Product>
 		<PackageId>$(ProjectName)</PackageId>
 		<Authors>木炭</Authors>
@@ -20,7 +20,6 @@
 		<RepositoryUrl>https://github.com/woodcoal/cloud-http-proxy</RepositoryUrl>
 		<PackageTags>CloudHttpProxy;Http;Proxy</PackageTags>
 		<RepositoryType>git</RepositoryType>
-		<Title>$(AssemblyName)</Title>
 		<IsPackable>True</IsPackable>
 		<GenerateAssemblyInfo>True</GenerateAssemblyInfo>
 		<WarningLevel>3</WarningLevel>
